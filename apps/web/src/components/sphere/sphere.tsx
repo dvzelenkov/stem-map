@@ -3,7 +3,11 @@ import { ReactNode } from "react";
 
 /* eslint-disable-next-line */
 export interface CylinderProps {
-  position: any,
+  position: {
+    x: number,
+    y: number,
+    z: number,
+  },
   radius: number,
   openEnded?: boolean,
   children: ReactNode,
@@ -11,12 +15,14 @@ export interface CylinderProps {
 }
 
 export function Cylinder(props: CylinderProps) {
+  const height = 10;
+
   return (
     <mesh
-      position={props.position}
+      position={[props.position.x, props.position.y + height / 2, props.position.z]}
       ref={props.refLink}
     >
-      <cylinderGeometry args={[props.radius, props.radius, 4, 32, 1, props.openEnded]} />
+      <cylinderGeometry args={[props.radius, props.radius, height, 32, 1, props.openEnded]} />
       {props.children}
     </mesh>
   );

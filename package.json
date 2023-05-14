@@ -2,22 +2,29 @@
   "name": "study",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "start": "nx serve"
+  },
   "private": true,
   "dependencies": {
+    "@loaders.gl/csv": "^3.3.5",
     "@nestjs/common": "^9.0.0",
     "@nestjs/core": "^9.0.0",
     "@nestjs/platform-express": "^9.0.0",
     "@react-three/drei": "^9.61.3",
     "@react-three/fiber": "^8.12.0",
     "axios": "^1.0.0",
+    "deck.gl": "^8.9.12",
+    "maplibre-gl": "^2.4.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-force-graph-3d": "^1.22.0",
+    "react-map-gl": "^7.0.23",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.0.0",
     "three": "^0.151.2",
-    "tslib": "^2.3.0"
+    "tslib": "^2.3.0",
+    "webpack-merge": "^5.8.0"
   },
   "devDependencies": {
     "@babel/preset-react": "^7.14.5",
