@@ -7,3 +7,14 @@ body {
     width: 100vw;
     overflow: hidden;
 }
+
+.field {
+    position: absolute;
+    top: 0;
+    left: 0;
+    // width: 100px;
+    // height: 100px;
+    background-color: slategrey;
+    padding: 10px;
+    color: white;
+}
