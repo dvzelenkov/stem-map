@@ -1,17 +1,9 @@
 import { ArcLayer, ArcLayerProps } from '@deck.gl/layers/typed';
-import { Color } from '@deck.gl/core/typed';
-
-export interface RelationData {
-  sourceId: string,
-  targetId: string,
-  sourcePosition: number[];
-  targetPosition: number[];
-  sourceColor: Color;
-  targetColor: Color;
-}
+import { DataFilterExtensionProps } from '@deck.gl/extensions/typed';
+import { RelationData } from '@study/shared';
 
 export class Relation extends ArcLayer<RelationData> {
-  constructor(props: Partial<ArcLayerProps<RelationData>>) {
+  constructor(props: Partial<ArcLayerProps<RelationData> & DataFilterExtensionProps>) {
     super({
       pickable: true,
       getWidth: 300,
