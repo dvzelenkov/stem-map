@@ -3,7 +3,14 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "start": "nx serve"
+    "start": "nx serve",
+    "typeorm": "ts-node -r tsconfig-paths/register -P libs/core/tsconfig.json node_modules/typeorm/cli -d libs/core/ormconfig.ts",
+    "typeorm-extension": "ts-node -r tsconfig-paths/register -P libs/core/tsconfig.json ./node_modules/typeorm-extension/bin/cli.cjs -d libs/core/ormconfig.ts",
+    "migration:run": "npm run typeorm migration:run",
+    "migration:revert": "npm run typeorm migration:revert",
+    "migration:create": "npm run typeorm migration:create",
+    "migration:generate": "npm run typeorm migration:generate",
+    "seeds:run": "npm run typeorm-extension seed:run"
   },
   "private": true,
   "dependencies": {
@@ -24,6 +31,7 @@
     "deck.gl": "^8.9.12",
     "graphql-subscriptions": "^2.0.0",
     "maplibre-gl": "^2.4.0",
+    "pg": "^8.12.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-force-graph-3d": "^1.22.0",
@@ -32,6 +40,7 @@
     "rxjs": "^7.0.0",
     "three": "^0.151.2",
     "tslib": "^2.3.0",
+    "typeorm-extension": "^3.5.1",
     "webpack-merge": "^5.8.0"
   },
   "devDependencies": {

@@ -1,12 +1,20 @@
-import { CreateDateColumn, DeleteDateColumn, UpdateDateColumn } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column } from "typeorm";
+import { CudDatesEntity } from "./cud-dates.entity";
 
-export class CudDatesEntity {
-  @CreateDateColumn({ name: 'created_at', default: () => 'CURRENT_TIMESTAMP' })
-	createdAt!: Date;
+@Entity({ name: 'earthquakes' })
+export class EarthquakeEntity extends CudDatesEntity {
+  @PrimaryGeneratedColumn()
+  id: number;
 
-	@UpdateDateColumn({ name: 'updated_at', default: () => 'CURRENT_TIMESTAMP' })
-	updatedAt!: Date;
+  @Column('decimal', { precision: 3, scale: 1 })
+  force: number;
 
-	@DeleteDateColumn({ name: 'deleted_at', nullable: true })
-	deletedAt?: Date;
+  @Column('decimal', { precision: 5, scale: 2 })
+  longitude: number;
+
+  @Column('decimal', { precision: 5, scale: 2 })
+  latitude: number;
+
+  @Column()
+  date: Date;
 }

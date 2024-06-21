@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_PASSWORD: dev
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - study-postgres-data:/var/lib/postgresql/data
 volumes:
-  postgres-data:
-    name: postgres-data
+  study-postgres-data:
+    name: study-postgres-data
