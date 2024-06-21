@@ -4,7 +4,7 @@ import { CudDatesEntity } from "./cud-dates.entity";
 @Entity({ name: 'earthquakes' })
 export class EarthquakeEntity extends CudDatesEntity {
   @PrimaryGeneratedColumn()
-  id: number;
+  id: string;
 
   @Column('decimal', { precision: 3, scale: 1 })
   force: number;

@@ -14,6 +14,7 @@ import Button from '@mui/material/Button';
 import { Box, Paper, Slider, Stack, styled } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import FileDownloadDoneIcon from '@mui/icons-material/FileDownloadDone';
+import axios from 'axios';
 
 export function App() {
   // Viewport settings
@@ -53,7 +54,13 @@ export function App() {
   const fileReader = new FileReader();
 
   const handleOnChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setFile(e.target.files ? e.target.files[0] : undefined);
+    if (e.target.files && e.target.files[0]) {
+      const formData = new FormData();
+      formData.append('file', e.target.files[0]);
+      axios.post('http://localhost:3333/api/upload', formData).then(res => {
+        console.log(res);
+      });
+    }
   };
 
   const csvFileToArray = (data: string) => {
@@ -77,7 +84,6 @@ export function App() {
 
       return {
         ...obj,
-        hasChildren: false,
         relationsCount: 2,
       };
     });
@@ -157,7 +163,6 @@ export function App() {
             itemC.force < 12.5 && curDateC.getTime() >= curDate.getTime() && curDateC.getTime() <= maxDate.getTime() &&
             getDistanceFromLatLonInKm(item.latitude, item.longitude, itemC.latitude, itemC.longitude) <= rMax
           ) {
-            item.hasChildren = true;
             earthQuakes.splice(index, 1);
             afterShockTimeLinesT.push({
               sourceId: item.id,
@@ -207,8 +212,7 @@ export function App() {
     new Stem<Earthquake>({
       id: 'mains',
       data: mains,
-      getFillColor: data => selectedId === data.id ? SELECT_MAIN_COLOR :
-        data.hasChildren ? MAIN_WITH_CHILDREN_COLOR : MAIN_COLOR,
+      getFillColor: data => selectedId === data.id ? SELECT_MAIN_COLOR : MAIN_COLOR,
       updateTriggers: {
         getFillColor: selectedId,
       },
@@ -347,6 +351,9 @@ export function App() {
           </Button>
           <Button disabled={!file} variant="outlined" onClick={handleClear}>
             Очистить
+          </Button>
+          <Button variant="contained" onClick={handleOnSubmit}>
+            Получить данные
           </Button>
         </Stack>
       </Paper>

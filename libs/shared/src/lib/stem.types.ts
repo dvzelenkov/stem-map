@@ -11,8 +11,6 @@ export interface RelationData {
   targetId: string,
   sourcePosition: number[];
   targetPosition: number[];
-  sourceColor: Color;
-  targetColor: Color;
   sourceDate: Date;
   targetDate: Date;
 }

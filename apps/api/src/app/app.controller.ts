@@ -1,15 +1,24 @@
 import { Controller, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { FullEarthquakesData } from '@study/shared';
+import { FileEarthquake, FullEarthquakesData } from '@study/shared';
 import { AppService } from './app.service';
+import 'multer';
 
 @Controller()
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  @Post()
+  @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
-  uploadFile(@UploadedFile() file: Express.Multer.File): FullEarthquakesData {
-    const fileReader = new FileReader();
+  uploadFile(@UploadedFile() file: Express.Multer.File) {
+    // console.log(file.buffer.toString());
+    const data = this.appService.csvStringToArray<FileEarthquake>(file.buffer.toString());
+    console.log(data);
+    const entities = this.appService.mapFileEarthquakeToEartquakeEntity(data);
+    console.log(entities);
+    const fullData = this.appService.calculateAftershocks(entities);
+    console.log(fullData);
+
+    return fullData;
   }
 }
