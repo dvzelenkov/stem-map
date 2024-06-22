@@ -1,7 +1,11 @@
-import { RelationData, StemData } from "./stem.types";
+import { GeoData, RelationData, StemData } from "./stem.types";
 
 export interface Earthquake extends StemData {
   force: number;
+  date: Date;
+}
+
+export interface NestedEarthquake extends GeoData {
   date: Date;
 }
 
@@ -19,6 +23,7 @@ export interface Aftershock extends Earthquake {
 
 export interface FullEarthquakesData {
   mains: Earthquake[];
+  nestedMainMarks: NestedEarthquake[];
   aftershocks: Aftershock[];
   mainTimelines: RelationData[];
   aftershockTimelines: RelationData[];

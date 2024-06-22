@@ -13,11 +13,8 @@ export class AppController {
   uploadFile(@UploadedFile() file: Express.Multer.File) {
     // console.log(file.buffer.toString());
     const data = this.appService.csvStringToArray<FileEarthquake>(file.buffer.toString());
-    console.log(data);
     const entities = this.appService.mapFileEarthquakeToEartquakeEntity(data);
-    console.log(entities);
     const fullData = this.appService.calculateAftershocks(entities);
-    console.log(fullData);
 
     return fullData;
   }

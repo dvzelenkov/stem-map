@@ -9,8 +9,6 @@ export class Relation extends ArcLayer<RelationData> {
       getWidth: 300,
       widthUnits: 'meters',
       getHeight: 0.1,
-      getSourceColor: data => data.sourceColor,
-      getTargetColor: data => data.targetColor,
       ...props,
     });
   }

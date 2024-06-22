@@ -4,17 +4,17 @@ import Map from 'react-map-gl';
 import maplibregl from 'maplibre-gl';
 import { ChangeEvent, useEffect, useState } from 'react';
 import { Stem } from './classes/stem';
-import { RelationData, Aftershock, Earthquake } from '@study/shared';
+import { RelationData, Aftershock, Earthquake, FullEarthquakesData, GeoData } from '@study/shared';
 import { Relation } from './classes/relation';
 import { LayersList, PickingInfo } from '@deck.gl/core/typed';
-import { getDistanceFromLatLonInKm } from './distance';
 import { Color } from '@deck.gl/core/typed';
 import { DataFilterExtension } from '@deck.gl/extensions/typed';
 import Button from '@mui/material/Button';
 import { Box, Paper, Slider, Stack, styled } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import FileDownloadDoneIcon from '@mui/icons-material/FileDownloadDone';
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
+import { NestedMark } from './classes/nested-mark';
 
 export function App() {
   // Viewport settings
@@ -27,7 +27,6 @@ export function App() {
   const SELECT_SECONDARY_COLOR: Color = [0, 191, 255];
 
   const MAIN_COLOR: Color = [165, 42, 42];
-  const MAIN_WITH_CHILDREN_COLOR: Color = [255, 69, 0];
   const MAIN_LINE_COLOR: Color = [165, 42, 42];
   
   const SECONDARY_COLOR: Color = [65, 105, 225];
@@ -35,173 +34,60 @@ export function App() {
 
   const MIN_MAIN_FORCE = 14;
 
-  const [sliderDates, setSliderDates] = useState<number[]>([]);
-  const [startDate, setStartDate] = useState<Date>(new Date(0));
-  const [endDate, setEndDate] = useState<Date>(new Date());
   const [file, setFile] = useState<File>();
-  const [earthQuakes, setEarthQuakes] = useState<Earthquake[]>([]);
+  const [sliderDates, setSliderDates] = useState<number[]>([-1, 1]);
+  const [shownAftershocks, setShownAftershocks] = useState<Aftershock[]>([]);
+  const [shownAftershockTimelines, setShownAftershockTimelines] = useState<RelationData[]>([]);
+
+  const [startDate, setStartDate] = useState<Date>();
+  const [endDate, setEndDate] = useState<Date>();
   const [mains, setMains] = useState<Earthquake[]>([]);
-  const [allAfterShocks, setAllAfterShocks] = useState<Aftershock[]>([]);
-  const [afterShocks, setAfterShocks] = useState<Aftershock[]>([]);
-  const [backs, setBacks] = useState<Earthquake[]>([]);
-  const [timeLines, setTimeLines] = useState<RelationData[]>([]);
-  const [afterShockTimeLines, setAfterShockTimeLines] = useState<RelationData[]>([]);
-  const [allAfterShockTimeLines, setAllAfterShockTimeLines] = useState<RelationData[]>([]);
-  // const [layers, setLayers] = useState<LayersList>([]);
+  const [aftershocks, setAftershocks] = useState<Aftershock[]>([]);
+  const [mainTimelines, setMainTimelines] = useState<RelationData[]>([]);
+  const [aftershockTimelines, setAftershockTimelines] = useState<RelationData[]>([]);
+  const [nestedMainMarks, setNestedMainMarks] = useState<GeoData[]>([]);
+
   const [selectedId, setSelectedId] = useState('');
   let layers: LayersList = [];
 
-  const fileReader = new FileReader();
-
   const handleOnChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
       const formData = new FormData();
       formData.append('file', e.target.files[0]);
-      axios.post('http://localhost:3333/api/upload', formData).then(res => {
-        console.log(res);
+      axios.post('http://localhost:3333/api/upload', formData)
+      .then(({ data }: AxiosResponse<FullEarthquakesData>) => {
+        console.log(data);
+        setMains(data.mains);
+        setAftershocks(data.aftershocks);
+        setMainTimelines(data.mainTimelines);
+        setAftershockTimelines(data.aftershockTimelines);
+        setStartDate(new Date(data.startDate));
+        setEndDate(new Date(data.endDate));
+        setNestedMainMarks(data.nestedMainMarks);
+        setSliderDates([
+          new Date(data.startDate).getTime(),
+          new Date(data.endDate).getTime(),
+        ]);
       });
-    }
-  };
-
-  const csvFileToArray = (data: string) => {
-    const csvHeader = data.slice(0, data.indexOf("\r\n")).split(";");
-    const csvRows = data.slice(data.indexOf("\r\n") + 2).split("\r\n");
-
-    const array: Earthquake[] = csvRows.map((item, index) => {
-      const values = item.split(";");
-      const obj: Earthquake = csvHeader.reduce((object: any, header, index) => {
-        object[header] = values[index];
-        return object;
-      }, {});
-      if (index === 0) {
-        console.log(obj);
-        setStartDate(getDate(obj.date));
-      }
-      if (index === csvRows.length - 2) {
-        console.log(obj);
-        setEndDate(getDate(obj.date));
-      }
-
-      return {
-        ...obj,
-        relationsCount: 2,
-      };
-    });
-
-    setEarthQuakes(array);
-  };
-
-  const handleOnSubmit = (e: any) => {
-    e.preventDefault();
-
-    if (file) {
-      fileReader.onload = function (event: any) {
-        const csvOutput = event.target.result;
-        csvFileToArray(csvOutput);
-      };
-      fileReader.readAsText(file);
     }
   };
 
   const handleClear = (e: any) => {
     e.preventDefault();
     setMains([]);
-    setAfterShocks([]);
-    setTimeLines([]);
+    setShownAftershocks([]);
+    setMainTimelines([]);
     setFile(undefined);
-    setSliderDates([]);
-  };
-
-  const getDate = (date: string) => {
-    const dateParts = date.split('.');
-    return new Date(+dateParts[2], +dateParts[1] - 1, +dateParts[0])
+    setSliderDates([-1, 1]);
+    setStartDate(undefined);
+    setEndDate(undefined);
   };
 
   useEffect(() => {
-    if (earthQuakes.length > 0) {
-      setSliderDates([startDate.getTime(), endDate.getTime()]);
-      console.log('all');
-      console.log(earthQuakes);
-      const mainsT: Earthquake[] = earthQuakes.filter((item, index) => {
-        if (item.force >= MIN_MAIN_FORCE) {
-          earthQuakes.splice(index, 1);
-          return true;
-        }
-        return false;
-      });
-      console.log('mains');
-      console.log(mainsT);
-      const timeLinesT: RelationData[] = [];
-      const afterShockTimeLinesT: RelationData[] = [];
-      let aftershocksT: Aftershock[]  = [];
-      mainsT.forEach((item, index, array) => {
-        const next = array[index + 1];
-        if (next) {
-          timeLinesT.push({
-            sourceId: item.id,
-            targetId: next.id,
-            sourcePosition: [+item.longitude, +item.latitude, 10000],
-            targetPosition: [+next.longitude, +next.latitude, 10000],
-            sourceColor: MAIN_LINE_COLOR,
-            targetColor: MAIN_LINE_COLOR,
-            sourceDate: getDate(item.date),
-            targetDate: getDate(next.date),
-          });
-        }
-        // console.log(item);
-        let rMax = 3.5 * Math.pow(10, (1 / 3) * (item.force - 11));
-        rMax = rMax > 1000 ? 1000 : Math.ceil(rMax);
-        const tMax = item.force < 14.5 ? Math.pow(10, 0.033 * item.force + 0.19) : Math.pow(10, 0.17 * item.force - 1.8);
-        const dateParts = item.date.split('.');
-        const curDate = new Date(+dateParts[2], +dateParts[1] - 1, +dateParts[0]);
-        const maxDate = new Date(curDate);
-        maxDate.setMonth(maxDate.getMonth() + tMax);
-        aftershocksT = aftershocksT.concat(earthQuakes.reduce<Aftershock[]>((filtered, itemC) => {
-          const dateCParts = itemC.date.split('.');
-          const curDateC = new Date(+dateCParts[2], +dateCParts[1] - 1, +dateCParts[0]);
-          if (
-            itemC.force < 12.5 && curDateC.getTime() >= curDate.getTime() && curDateC.getTime() <= maxDate.getTime() &&
-            getDistanceFromLatLonInKm(item.latitude, item.longitude, itemC.latitude, itemC.longitude) <= rMax
-          ) {
-            earthQuakes.splice(index, 1);
-            afterShockTimeLinesT.push({
-              sourceId: item.id,
-              targetId: itemC.id,
-              sourcePosition: [+item.longitude, +item.latitude, 5000],
-              targetPosition: [+itemC.longitude, +itemC.latitude, 5000],
-              sourceColor: SECONDARY_LINE_COLOR,
-              targetColor: SECONDARY_LINE_COLOR,
-              sourceDate: getDate(item.date),
-              targetDate: getDate(itemC.date),
-            });
-            filtered.push({
-              ...itemC,
-              parentId: item.id,
-              relationsCount: 1,
-            });
-          }
-          return filtered;
-        }, []));
-      });
-      console.log('aftershocks');
-      console.log(aftershocksT);
-      console.log('timeLines');
-      console.log(timeLinesT);
-      console.log('afterShockTimeLines');
-      console.log(afterShockTimeLinesT);
-
-      setMains(mainsT);
-      setAllAfterShocks(aftershocksT);
-      setBacks(earthQuakes);
-      setTimeLines(timeLinesT);
-      setAllAfterShockTimeLines(afterShockTimeLinesT);
-    }
-  }, [earthQuakes]);
-
-  useEffect(() => {
-    setAfterShocks(allAfterShocks.filter(aftershock => aftershock.parentId === selectedId));
-    setAfterShockTimeLines(allAfterShockTimeLines.filter(timeline => timeline.sourceId === selectedId))
-  }, [allAfterShockTimeLines, allAfterShocks, selectedId]);
+    setShownAftershocks(aftershocks.filter(aftershock => aftershock.parentId === selectedId));
+    setShownAftershockTimelines(aftershockTimelines.filter(timeline => timeline.sourceId === selectedId))
+  }, [aftershockTimelines, aftershocks, selectedId]);
 
   const dataFilter = new DataFilterExtension({
     filterSize: 1,
@@ -219,22 +105,26 @@ export function App() {
       autoHighlight: true,
       highlightColor: SELECT_MAIN_COLOR,
       extensions: [dataFilter],
-      getFilterValue: (d: Earthquake) => getDate(d.date).getTime(),
+      getFilterValue: (d: Earthquake) => new Date(d.date).getTime(),
       filterRange: [sliderDates[0], sliderDates[1]],
     }),
-    // new Stem<EarthQuake>({
-    //   id: 'back',
-    //   data: earthQuakes,
-    //   getFillColor: () => [175, 238, 238]
-    // }),
+    new NestedMark({
+      id: 'mainMarks',
+      data: nestedMainMarks,
+      getFillColor: SECONDARY_COLOR,
+      getRadius: data => selectedId === data.id ? 0 : 1000,
+      updateTriggers: {
+        getRadius: selectedId,
+      },
+    }),
     new Stem<Earthquake>({
       id: 'aftershocks',
-      data: afterShocks,
+      data: shownAftershocks,
       getFillColor: () => SECONDARY_COLOR,
       autoHighlight: true,
       highlightColor: SELECT_SECONDARY_COLOR,
       extensions: [dataFilter],
-      getFilterValue: (d: Earthquake) => getDate(d.date).getTime(),
+      getFilterValue: (d: Earthquake) => new Date(d.date).getTime(),
       filterRange: [sliderDates[0], sliderDates[1]],
       // getFillColor: d => {
       //   if (+d.longitude === mainLong && +d.latitude === mainLat) {
@@ -245,19 +135,19 @@ export function App() {
     }),
     new Relation({
       id: 'timeLines',
-      data: timeLines,
+      data: mainTimelines,
       getSourceColor: (data: RelationData) => selectedId === data.sourceId ||
-        selectedId === data.targetId ? SELECT_MAIN_COLOR : data.sourceColor,
+        selectedId === data.targetId ? SELECT_MAIN_COLOR : MAIN_LINE_COLOR,
       getTargetColor: (data: RelationData) => selectedId === data.sourceId ||
-        selectedId === data.targetId ? SELECT_MAIN_COLOR : data.targetColor,
+        selectedId === data.targetId ? SELECT_MAIN_COLOR : MAIN_LINE_COLOR,
       updateTriggers: {
         getSourceColor: selectedId,
         getTargetColor: selectedId,
       },
       extensions: [dataFilter],
       getFilterValue: (d: RelationData) => [
-        d.sourceDate.getTime(),
-        d.targetDate.getTime(),
+        new Date(d.sourceDate).getTime(),
+        new Date(d.targetDate).getTime(),
       ],
       filterRange: [sliderDates[0], sliderDates[1]],
       // filterSoftRange: [
@@ -267,15 +157,17 @@ export function App() {
     }),
     new Relation({
       id: 'afterShockTimeLines',
-      data: afterShockTimeLines,
+      data: shownAftershockTimelines,
       extensions: [dataFilter],
-      getFilterValue: (d: RelationData) => d.sourceDate.getTime(),
+      getFilterValue: (d: RelationData) => new Date(d.sourceDate).getTime(),
+      getSourceColor: SECONDARY_LINE_COLOR,
+      getTargetColor: SECONDARY_LINE_COLOR,
       filterRange: [sliderDates[0], sliderDates[1]],
       // filterSoftRange: [
       //   sliderDates[0] * 0.9 + sliderDates[1] * 0.1,
       //   sliderDates[0] * 0.1 + sliderDates[1] * 0.9
       // ],
-    })
+    }),
   ];
 
   const VisuallyHiddenInput = styled('input')({
@@ -299,7 +191,7 @@ export function App() {
     return `${date.getMonth() + 1}.${date.getFullYear()}`;
   }
 
-  const marks = [
+  const marks = startDate && endDate ? [
     {
       value: startDate.getTime(),
       label: `${startDate.getMonth() + 1}.${startDate.getFullYear()}`,
@@ -308,7 +200,7 @@ export function App() {
       value: endDate.getTime(),
       label: `${endDate.getMonth()}.${endDate.getFullYear()}`,
     },
-  ];
+  ] : [];
 
   return (
     <div className={styles['app']} onContextMenu={evt => evt.preventDefault()}>
@@ -346,13 +238,10 @@ export function App() {
             {file ? file.name : 'Загрузить файл'}
             <VisuallyHiddenInput type="file" accept=".csv" onChange={handleOnChange} />
           </Button>
-          <Button disabled={!file} variant="contained" onClick={handleOnSubmit}>
-            Обработать файл
-          </Button>
           <Button disabled={!file} variant="outlined" onClick={handleClear}>
             Очистить
           </Button>
-          <Button variant="contained" onClick={handleOnSubmit}>
+          <Button variant="contained">
             Получить данные
           </Button>
         </Stack>
@@ -367,16 +256,18 @@ export function App() {
           p: 2,
         }}
       >
-        <Slider
-          min={startDate.getTime()}
-          max={endDate.getTime()}
-          step={1000 * 60 * 60 * 24 * 29}
-          value={sliderDates}
-          marks={marks}
-          valueLabelFormat={valueLabelFormat}
-          onChange={handleChange}
-          valueLabelDisplay="auto"
-        />
+        {startDate && endDate &&
+          <Slider
+            min={startDate.getTime()}
+            max={endDate.getTime()}
+            step={1000 * 60 * 60 * 24 * 29}
+            value={sliderDates}
+            marks={marks}
+            valueLabelFormat={valueLabelFormat}
+            onChange={handleChange}
+            valueLabelDisplay="auto"
+          />
+        }
       </Box>}
     </div>
   );

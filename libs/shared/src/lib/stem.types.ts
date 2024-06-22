@@ -1,9 +1,12 @@
-export interface StemData {
-  id: string;
-  longitude: number;
-  latitude: number;
+import { Coordinates } from "./utils";
+
+export interface StemData extends GeoData {
   relationsCount: number;
   color?: Color;
+}
+
+export interface GeoData extends Coordinates {
+  id: string;
 }
 
 export interface RelationData {

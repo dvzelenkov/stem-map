@@ -1,6 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { EarthquakeEntity } from '@study/core';
-import { Aftershock, Earthquake, FileEarthquake, FullEarthquakesData, RelationData, getDateFromRusFormat, getDistanceFromLatLonInKm } from '@study/shared';
+import {
+  Aftershock,
+  Earthquake,
+  FileEarthquake,
+  FullEarthquakesData,
+  NestedEarthquake,
+  RelationData,
+  getDateFromRusFormat,
+  getKmBetweenCoordinates,
+} from '@study/shared';
 
 @Injectable()
 export class AppService {
@@ -25,6 +34,7 @@ export class AppService {
 
     for (const value of data) {
       try {
+        if (value.id)
         entities.push({
           id: value.id,
           longitude: +value.longitude,
@@ -58,6 +68,7 @@ export class AppService {
       }
     }
 
+    const nestedMainMarks: NestedEarthquake[] = [];
     const aftershocks: Aftershock[] = [];
     const mainTimelines: RelationData[] = [];
     const aftershockTimelines: RelationData[] = [];
@@ -80,20 +91,19 @@ export class AppService {
       let rMax = 3.5 * Math.pow(10, (1 / 3) * (mainEarthquake.force - 11));
       rMax = rMax > 1000 ? 1000 : Math.ceil(rMax);
       const tMax = mainEarthquake.force < 14.5 ? Math.pow(10, 0.033 * mainEarthquake.force + 0.19) : Math.pow(10, 0.17 * mainEarthquake.force - 1.8);
-      const maxDate = mainEarthquake.date;
-      maxDate.setMonth(maxDate.getMonth() + tMax);
+      const maxDate = new Date(mainEarthquake.date);
+      maxDate.setMonth(maxDate.getMonth() + Math.ceil(tMax));
 
       for (const earthquake of earthquakes) {
         if (
           earthquake.date.getTime() >= mainEarthquake.date.getTime() &&
           earthquake.date.getTime() <= maxDate.getTime() &&
-          getDistanceFromLatLonInKm(
-            mainEarthquake.latitude,
-            mainEarthquake.longitude,
-            earthquake.latitude,
-            earthquake.longitude,
+          getKmBetweenCoordinates(
+            mainEarthquake,
+            earthquake,
           ) <= rMax
         ) {
+          nestedMainMarks.push(mainEarthquake);
           earthquakes.splice(index, 1);
           aftershocks.push({
             ...earthquake,
@@ -118,6 +128,7 @@ export class AppService {
       aftershocks,
       mainTimelines,
       aftershockTimelines,
+      nestedMainMarks,
       startDate,
       endDate,
     };
