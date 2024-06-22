@@ -4,17 +4,18 @@ import Map from 'react-map-gl';
 import maplibregl from 'maplibre-gl';
 import { ChangeEvent, useEffect, useState } from 'react';
 import { Stem } from './classes/stem';
-import { RelationData, Aftershock, Earthquake, FullEarthquakesData, GeoData } from '@study/shared';
+import { RelationData, Aftershock, Earthquake, FullEarthquakesData, GeoData, NestedEarthquake } from '@study/shared';
 import { Relation } from './classes/relation';
 import { LayersList, PickingInfo } from '@deck.gl/core/typed';
 import { Color } from '@deck.gl/core/typed';
 import { DataFilterExtension } from '@deck.gl/extensions/typed';
 import Button from '@mui/material/Button';
-import { Box, Paper, Slider, Stack, styled } from '@mui/material';
+import { Box, Checkbox, FormControlLabel, Paper, Slider, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import FileDownloadDoneIcon from '@mui/icons-material/FileDownloadDone';
 import axios, { AxiosResponse } from 'axios';
 import { NestedMark } from './classes/nested-mark';
+import { VisuallyHiddenInput } from './components/hidden-input';
 
 export function App() {
   // Viewport settings
@@ -23,18 +24,19 @@ export function App() {
     longitude: 113.9,
     zoom: 5,
   };
-  const SELECT_MAIN_COLOR: Color = [255, 215, 0];
-  const SELECT_SECONDARY_COLOR: Color = [0, 191, 255];
 
-  const MAIN_COLOR: Color = [165, 42, 42];
-  const MAIN_LINE_COLOR: Color = [165, 42, 42];
+  const MAIN_COLOR: Color = [221, 21, 14];
+  const MAIN_LINE_COLOR: Color = [250, 89, 86];
+  const SELECT_MAIN_COLOR: Color = [245, 169, 46];
   
-  const SECONDARY_COLOR: Color = [65, 105, 225];
-  const SECONDARY_LINE_COLOR: Color = [100, 149, 237];
-
-  const MIN_MAIN_FORCE = 14;
+  const SECONDARY_COLOR: Color = [2, 71, 140];
+  const SECONDARY_LINE_COLOR: Color = [125, 184, 247];
+  const SELECT_SECONDARY_COLOR: Color = [125, 184, 247];
 
   const [file, setFile] = useState<File>();
+  const [filterLimit, setFilterLimit] = useState(14);
+  const [selectedId, setSelectedId] = useState('');
+  const [showAllAftershocks, setShowAllAftershocks] = useState(false);
   const [sliderDates, setSliderDates] = useState<number[]>([-1, 1]);
   const [shownAftershocks, setShownAftershocks] = useState<Aftershock[]>([]);
   const [shownAftershockTimelines, setShownAftershockTimelines] = useState<RelationData[]>([]);
@@ -47,54 +49,31 @@ export function App() {
   const [aftershockTimelines, setAftershockTimelines] = useState<RelationData[]>([]);
   const [nestedMainMarks, setNestedMainMarks] = useState<GeoData[]>([]);
 
-  const [selectedId, setSelectedId] = useState('');
-  let layers: LayersList = [];
-
-  const handleOnChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      const formData = new FormData();
-      formData.append('file', e.target.files[0]);
-      axios.post('http://localhost:3333/api/upload', formData)
-      .then(({ data }: AxiosResponse<FullEarthquakesData>) => {
-        console.log(data);
-        setMains(data.mains);
-        setAftershocks(data.aftershocks);
-        setMainTimelines(data.mainTimelines);
-        setAftershockTimelines(data.aftershockTimelines);
-        setStartDate(new Date(data.startDate));
-        setEndDate(new Date(data.endDate));
-        setNestedMainMarks(data.nestedMainMarks);
-        setSliderDates([
-          new Date(data.startDate).getTime(),
-          new Date(data.endDate).getTime(),
-        ]);
-      });
-    }
-  };
-
-  const handleClear = (e: any) => {
-    e.preventDefault();
-    setMains([]);
-    setShownAftershocks([]);
-    setMainTimelines([]);
-    setFile(undefined);
-    setSliderDates([-1, 1]);
-    setStartDate(undefined);
-    setEndDate(undefined);
-  };
-
-  useEffect(() => {
-    setShownAftershocks(aftershocks.filter(aftershock => aftershock.parentId === selectedId));
-    setShownAftershockTimelines(aftershockTimelines.filter(timeline => timeline.sourceId === selectedId))
-  }, [aftershockTimelines, aftershocks, selectedId]);
-
   const dataFilter = new DataFilterExtension({
     filterSize: 1,
     fp64: false
   }); 
 
-  layers = [
+  useEffect(() => {
+    setShownAftershocks(
+      aftershocks.filter(
+        aftershock => aftershock.parentId === selectedId || showAllAftershocks
+      )
+    );
+    setShownAftershockTimelines(
+      aftershockTimelines.filter(
+        timeline => timeline.sourceId === selectedId || showAllAftershocks
+      )
+    )
+  }, [aftershockTimelines, aftershocks, selectedId, showAllAftershocks]);
+
+  useEffect(() => {
+    if (file) {
+      uploadFile(file);
+    }
+  }, [filterLimit, file]);
+
+  const layers: LayersList = [
     new Stem<Earthquake>({
       id: 'mains',
       data: mains,
@@ -112,10 +91,13 @@ export function App() {
       id: 'mainMarks',
       data: nestedMainMarks,
       getFillColor: SECONDARY_COLOR,
-      getRadius: data => selectedId === data.id ? 0 : 1000,
+      extensions: [dataFilter],
+      getRadius: data => selectedId === data.id || showAllAftershocks ? 0 : NestedMark.RADIUS,
       updateTriggers: {
-        getRadius: selectedId,
+        getRadius: [selectedId, showAllAftershocks],
       },
+      getFilterValue: (d: NestedEarthquake) => new Date(d.date).getTime(),
+      filterRange: [sliderDates[0], sliderDates[1]],
     }),
     new Stem<Earthquake>({
       id: 'aftershocks',
@@ -170,20 +152,61 @@ export function App() {
     }),
   ];
 
-  const VisuallyHiddenInput = styled('input')({
-    clip: 'rect(0 0 0 0)',
-    clipPath: 'inset(50%)',
-    height: 1,
-    overflow: 'hidden',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    whiteSpace: 'nowrap',
-    width: 1,
-  });
+  const uploadFile = (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('limit', `${filterLimit}`);
 
-  const handleChange = (_event: Event, newValue: number | number[]) => {
+    axios.post('http://localhost:3333/api/upload', formData)
+    .then(({ data }: AxiosResponse<FullEarthquakesData>) => setData(data));
+  };
+
+  const handleOnUploadFile = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      clearData();
+      setFile(e.target.files[0]);
+    }
+  };
+  
+
+  const handleOnGetData = () => {
+    clearData();
+
+    const formData = new FormData();
+    formData.append('limit', `${filterLimit}`);
+
+    axios.post('http://localhost:3333/api/earthquakes', formData)
+    .then(({ data }: AxiosResponse<FullEarthquakesData>) => setData(data));
+  };
+
+  const handleSliderChange = (_event: Event, newValue: number | number[]) => {
     setSliderDates(newValue as number[]);
+  };
+
+  const setData = (data: FullEarthquakesData) => {
+    if (data && data.mains) {
+      setMains(data.mains);
+      setAftershocks(data.aftershocks);
+      setMainTimelines(data.mainTimelines);
+      setAftershockTimelines(data.aftershockTimelines);
+      setStartDate(new Date(data.startDate));
+      setEndDate(new Date(data.endDate));
+      setNestedMainMarks(data.nestedMainMarks);
+      setSliderDates([
+        new Date(data.startDate).getTime(),
+        new Date(data.endDate).getTime(),
+      ]);
+    }
+  };
+
+  const clearData = () => {
+    setMains([]);
+    setShownAftershocks([]);
+    setMainTimelines([]);
+    setFile(undefined);
+    setSliderDates([-1, 1]);
+    setStartDate(undefined);
+    setEndDate(undefined);
   };
 
   const valueLabelFormat = (value: number): string => {
@@ -228,6 +251,7 @@ export function App() {
         <Stack
           spacing={2}
           direction="row"
+          justifyContent="space-between"
         >
           <Button
             component="label"
@@ -236,17 +260,52 @@ export function App() {
             startIcon={file ? <FileDownloadDoneIcon /> : <CloudUploadIcon />}
           >
             {file ? file.name : 'Загрузить файл'}
-            <VisuallyHiddenInput type="file" accept=".csv" onChange={handleOnChange} />
+            <VisuallyHiddenInput type="file" accept=".csv" onChange={handleOnUploadFile} />
           </Button>
-          <Button disabled={!file} variant="outlined" onClick={handleClear}>
+          <Button variant="contained" onClick={handleOnGetData}>
+            Загрузить данные из БД
+          </Button>
+          <Button disabled={mains.length === 0} variant="outlined" onClick={clearData}>
             Очистить
           </Button>
-          <Button variant="contained">
-            Получить данные
-          </Button>
         </Stack>
+        {file &&
+          <Stack
+            spacing={2}
+            direction="row"
+            sx={{ mt: 2 }}
+            justifyContent="space-between"
+          >
+            <FormControlLabel
+              label="Раскрыть все вложения"
+              control={
+                <Checkbox
+                  checked={showAllAftershocks}
+                  onChange={(_e, checked) => setShowAllAftershocks(checked)}
+                />
+              }
+            />
+            <ToggleButtonGroup
+              size="small"
+              color="primary"
+              value={filterLimit}
+              exclusive
+              onChange={(_e, value) => setFilterLimit(value)}
+            >
+              <ToggleButton value={9}>9</ToggleButton>
+              <ToggleButton value={10}>10</ToggleButton>
+              <ToggleButton value={11}>11</ToggleButton>
+              <ToggleButton value={12}>12</ToggleButton>
+              <ToggleButton value={13}>13</ToggleButton>
+              <ToggleButton value={14}>14</ToggleButton>
+              <ToggleButton value={15}>15</ToggleButton>
+              <ToggleButton value={16}>16</ToggleButton>
+              <ToggleButton value={17}>17</ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
+        }
       </Paper>
-      {sliderDates.length > 0 && <Box
+      {sliderDates.length > 0 && startDate && endDate && <Box
         component="div"
         sx = {{
           position: 'absolute',
@@ -256,18 +315,16 @@ export function App() {
           p: 2,
         }}
       >
-        {startDate && endDate &&
-          <Slider
-            min={startDate.getTime()}
-            max={endDate.getTime()}
-            step={1000 * 60 * 60 * 24 * 29}
-            value={sliderDates}
-            marks={marks}
-            valueLabelFormat={valueLabelFormat}
-            onChange={handleChange}
-            valueLabelDisplay="auto"
-          />
-        }
+        <Slider
+          min={startDate.getTime()}
+          max={endDate.getTime()}
+          step={1000 * 60 * 60 * 24 * 29}
+          value={sliderDates}
+          marks={marks}
+          valueLabelFormat={valueLabelFormat}
+          onChange={handleSliderChange}
+          valueLabelDisplay="auto"
+        />
       </Box>}
     </div>
   );

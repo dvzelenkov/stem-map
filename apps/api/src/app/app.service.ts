@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EarthquakeEntity } from '@study/core';
+import { DataSource } from 'typeorm';
 import {
   Aftershock,
   Earthquake,
@@ -13,6 +14,14 @@ import {
 
 @Injectable()
 export class AppService {
+  constructor(private dataSource: DataSource) {}
+
+  async getEarthquakes(): Promise<EarthquakeEntity[]> {
+    const earthquakeRepository = this.dataSource.getRepository(EarthquakeEntity);
+
+    return await earthquakeRepository.find();
+  }
+
   csvStringToArray<T>(data: string): T[] {
     const csvHeader = data.slice(0, data.indexOf("\r\n")).split(";");
     const csvRows = data.slice(data.indexOf("\r\n") + 2).split("\r\n");
@@ -36,7 +45,7 @@ export class AppService {
       try {
         if (value.id)
         entities.push({
-          id: value.id,
+          id: +value.id,
           longitude: +value.longitude,
           latitude: +value.latitude,
           force: +value.force,
@@ -63,6 +72,7 @@ export class AppService {
         earthquakes.splice(index, 1);
         mains.push({
           ...element,
+          id: `${element.id}`,
           relationsCount: 2,
         });
       }
@@ -107,13 +117,14 @@ export class AppService {
           earthquakes.splice(index, 1);
           aftershocks.push({
             ...earthquake,
+            id: `${earthquake.id}`,
             relationsCount: 1,
             parentId: mainEarthquake.id,
           });
 
           aftershockTimelines.push({
             sourceId: mainEarthquake.id,
-            targetId: earthquake.id,
+            targetId: `${earthquake.id}`,
             sourcePosition: [earthquake.longitude, earthquake.latitude, 5000],
             targetPosition: [mainEarthquake.longitude, mainEarthquake.latitude, 5000],
             sourceDate: mainEarthquake.date,
