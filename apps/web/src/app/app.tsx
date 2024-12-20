@@ -4,7 +4,7 @@ import Map from 'react-map-gl';
 import maplibregl from 'maplibre-gl';
 import { ChangeEvent, useEffect, useState } from 'react';
 import { Stem } from './classes/stem';
-import { RelationData, Aftershock, Earthquake, FullEarthquakesData, GeoData, NestedEarthquake } from '@study/shared';
+import { RelationData, Aftershock, Earthquake, GeoData, NestedEarthquake, FullEarthquakesDataWithSwarms, Coordinates } from '@study/shared';
 import { Relation } from './classes/relation';
 import { LayersList, PickingInfo } from '@deck.gl/core/typed';
 import { Color } from '@deck.gl/core/typed';
@@ -16,6 +16,7 @@ import FileDownloadDoneIcon from '@mui/icons-material/FileDownloadDone';
 import axios, { AxiosResponse } from 'axios';
 import { NestedMark } from './classes/nested-mark';
 import { VisuallyHiddenInput } from './components/hidden-input';
+import {SolidPolygonLayer} from '@deck.gl/layers/typed';
 
 export function App() {
   // Viewport settings
@@ -33,6 +34,13 @@ export function App() {
   const SECONDARY_LINE_COLOR: Color = [125, 184, 247];
   const SELECT_SECONDARY_COLOR: Color = [125, 184, 247];
 
+  const BACKGROUND_COLOR: Color = [182, 178, 174];
+  const SELECT_BACKGROUND_COLOR: Color = [223, 229, 232];
+
+  const SWARM_COLOR: Color = [242, 226, 210, 150];
+  const SWARM_LINE_COLOR: Color = [159, 183, 185, 150];
+  const SWARM_SELECTED_COLOR: Color = [250, 245, 239, 150];
+
   const [file, setFile] = useState<File>();
   const [filterLimit, setFilterLimit] = useState(14);
   const [selectedId, setSelectedId] = useState('');
@@ -48,6 +56,9 @@ export function App() {
   const [mainTimelines, setMainTimelines] = useState<RelationData[]>([]);
   const [aftershockTimelines, setAftershockTimelines] = useState<RelationData[]>([]);
   const [nestedMainMarks, setNestedMainMarks] = useState<GeoData[]>([]);
+  const [backgrounds, setBackgrounds] = useState<Earthquake[]>([]);
+  const [swarmContours, setSwarmContours] = useState<Coordinates[][]>([]);
+  // const [swarms, setSwarms] = useState<SwarmEarthquake[][]>([]);
 
   const dataFilter = new DataFilterExtension({
     filterSize: 1,
@@ -71,9 +82,23 @@ export function App() {
     if (file) {
       uploadFile(file);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterLimit, file]);
 
   const layers: LayersList = [
+    new Stem<Earthquake>({
+      id: 'backgrounds',
+      data: backgrounds,
+      getFillColor: data => selectedId === data.id ? SELECT_BACKGROUND_COLOR : BACKGROUND_COLOR,
+      updateTriggers: {
+        getFillColor: selectedId,
+      },
+      autoHighlight: true,
+      highlightColor: SELECT_BACKGROUND_COLOR,
+      extensions: [dataFilter],
+      getFilterValue: (d: Earthquake) => new Date(d.date).getTime(),
+      filterRange: [sliderDates[0], sliderDates[1]],
+    }),
     new Stem<Earthquake>({
       id: 'mains',
       data: mains,
@@ -150,6 +175,23 @@ export function App() {
       //   sliderDates[0] * 0.1 + sliderDates[1] * 0.9
       // ],
     }),
+    new SolidPolygonLayer<Coordinates[]>({
+      id: `swarmContours`,
+      data: swarmContours,
+      getPolygon: 
+        (contour) => contour.map((item: any) => [item.longitude, item.latitude]),
+      getFillColor: SWARM_COLOR,
+      extruded: true,
+      wireframe: true,
+      getElevation: 10,
+      getLineColor: SWARM_LINE_COLOR,
+      pickable: true,
+      autoHighlight: true,
+      highlightColor: SWARM_SELECTED_COLOR,
+      // extensions: [dataFilter],
+      // getFilterValue: (d: Earthquake) => new Date(d.date).getTime(),
+      // filterRange: [sliderDates[0], sliderDates[1]],
+    }),
   ];
 
   const uploadFile = (file: File) => {
@@ -158,32 +200,31 @@ export function App() {
     formData.append('limit', `${filterLimit}`);
 
     axios.post('http://localhost:3333/api/upload', formData)
-    .then(({ data }: AxiosResponse<FullEarthquakesData>) => setData(data));
+    .then(({ data }: AxiosResponse<FullEarthquakesDataWithSwarms>) => setData(data));
   };
 
   const handleOnUploadFile = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      clearData();
       setFile(e.target.files[0]);
     }
   };
   
 
-  const handleOnGetData = () => {
-    clearData();
+  // const handleOnGetData = () => {
+  //   clearData();
 
-    const formData = new FormData();
-    formData.append('limit', `${filterLimit}`);
+  //   const formData = new FormData();
+  //   formData.append('limit', `${filterLimit}`);
 
-    axios.post('http://localhost:3333/api/earthquakes', formData)
-    .then(({ data }: AxiosResponse<FullEarthquakesData>) => setData(data));
-  };
+  //   axios.post('http://localhost:3333/api/earthquakes', formData)
+  //   .then(({ data }: AxiosResponse<FullEarthquakesData>) => setData(data));
+  // };
 
   const handleSliderChange = (_event: Event, newValue: number | number[]) => {
     setSliderDates(newValue as number[]);
   };
 
-  const setData = (data: FullEarthquakesData) => {
+  const setData = (data: FullEarthquakesDataWithSwarms) => {
     if (data && data.mains) {
       setMains(data.mains);
       setAftershocks(data.aftershocks);
@@ -192,6 +233,9 @@ export function App() {
       setStartDate(new Date(data.startDate));
       setEndDate(new Date(data.endDate));
       setNestedMainMarks(data.nestedMainMarks);
+      setBackgrounds(data.backgrounds);
+      setSwarmContours(data.contours);
+      // setSwarms(data.swarms);
       setSliderDates([
         new Date(data.startDate).getTime(),
         new Date(data.endDate).getTime(),
@@ -203,6 +247,9 @@ export function App() {
     setMains([]);
     setShownAftershocks([]);
     setMainTimelines([]);
+    setSwarmContours([]);
+    // setSwarms([]);
+    setBackgrounds([]);
     setFile(undefined);
     setSliderDates([-1, 1]);
     setStartDate(undefined);
@@ -234,7 +281,7 @@ export function App() {
         width={'100vw'}
         height={'100vh'}
         onClick={(info: PickingInfo) => { info.object?.id ? setSelectedId(info.object.id) : setSelectedId('')}}
-        getTooltip={({object}) => object && object.force && `K: ${object.force}${'\n'}Дата: ${object.date}${'\n'}Ширина: ${object.latitude}${'\n'}Долгота: ${object.longitude}`}
+        getTooltip={({object}) => object && object.force && `K: ${object.force}${'\n'}Дата: 0${new Date(object.date).getDay()}.0${new Date(object.date).getMonth()}.${new Date(object.date).getFullYear()}${'\n'}Ширина: ${object.latitude}${'\n'}Долгота: ${object.longitude}`}
       >
         <Map mapLib={maplibregl} mapStyle={'https://api.maptiler.com/maps/outdoor-v2/style.json?key=EY1glioABfpXI9vfzMwl'} />
       </DeckGL>
@@ -251,20 +298,19 @@ export function App() {
         <Stack
           spacing={2}
           direction="row"
-          justifyContent="space-between"
         >
           <Button
             component="label"
-            color={file ? 'success' : 'primary'}
             variant={file ? 'outlined' : 'contained'}
             startIcon={file ? <FileDownloadDoneIcon /> : <CloudUploadIcon />}
+            disabled={!!file}
           >
             {file ? file.name : 'Загрузить файл'}
-            <VisuallyHiddenInput type="file" accept=".csv" onChange={handleOnUploadFile} />
+            {!file && <VisuallyHiddenInput type="file" accept=".csv" onChange={handleOnUploadFile} />}
           </Button>
-          <Button variant="contained" onClick={handleOnGetData}>
+          {/* <Button variant="contained" onClick={handleOnGetData}>
             Загрузить данные из БД
-          </Button>
+          </Button> */}
           <Button disabled={mains.length === 0} variant="outlined" onClick={clearData}>
             Очистить
           </Button>
@@ -292,15 +338,11 @@ export function App() {
               exclusive
               onChange={(_e, value) => setFilterLimit(value)}
             >
-              <ToggleButton value={9}>9</ToggleButton>
-              <ToggleButton value={10}>10</ToggleButton>
-              <ToggleButton value={11}>11</ToggleButton>
               <ToggleButton value={12}>12</ToggleButton>
               <ToggleButton value={13}>13</ToggleButton>
               <ToggleButton value={14}>14</ToggleButton>
               <ToggleButton value={15}>15</ToggleButton>
               <ToggleButton value={16}>16</ToggleButton>
-              <ToggleButton value={17}>17</ToggleButton>
             </ToggleButtonGroup>
           </Stack>
         }

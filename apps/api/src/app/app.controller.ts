@@ -16,7 +16,7 @@ export class AppController {
   ) {
     const data = this.appService.csvStringToArray<FileEarthquake>(file.buffer.toString());
     const entities = this.appService.mapFileEarthquakeToEartquakeEntity(data);
-    const fullData = this.appService.calculateAftershocks(entities, limit);
+    const fullData = this.appService.getFullEarthquakesDataWithSwarms(entities, limit, 100, 15, 50);
 
     return fullData;
   }
@@ -32,7 +32,7 @@ export class AppController {
     console.log(`Количество данных: ${entities.length}`);
 
     start = performance.now();
-    this.appService.calculateAftershocks(entities, limit);
+    this.appService.getFullEartquakesData(entities, limit);
     duration = performance.now() - start;
     console.log(`Время обработки данных: ${duration}`);
 

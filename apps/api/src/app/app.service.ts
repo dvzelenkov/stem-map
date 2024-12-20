@@ -1,15 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { EarthquakeEntity } from '@study/core';
 import { DataSource } from 'typeorm';
+import dbscan from '@cdxoo/dbscan';
+
 import {
   Aftershock,
   Earthquake,
+  SwarmEarthquake,
+  EarthquakeSwarms,
   FileEarthquake,
   FullEarthquakesData,
+  FullEarthquakesDataWithSwarms,
   NestedEarthquake,
   RelationData,
+  convexHull,
+  getContourPoints,
   getDateFromRusFormat,
   getKmBetweenCoordinates,
+  getPercentageValue,
+  parseDaysToMs,
+  parseMsToDays,
 } from '@study/shared';
 
 @Injectable()
@@ -58,7 +68,53 @@ export class AppService {
     return entities;
   }
 
-  calculateAftershocks(earthquakes: EarthquakeEntity[], limit = 14): FullEarthquakesData {
+  mapEarthquakeEntityToEarthquake(
+    entity: EarthquakeEntity,
+    relationsCount: number,
+  ): Earthquake {
+    return {
+      ...entity,
+      id: `${entity.id}`,
+      relationsCount,
+    };
+  }
+
+  mapEarthquakeEntityToAftershock(
+    entity: EarthquakeEntity,
+    relationsCount: number,
+    parentId: string,
+  ): Aftershock {
+    return {
+      ...this.mapEarthquakeEntityToEarthquake(entity, relationsCount),
+      parentId,
+    };
+  }
+
+  getFullEarthquakesDataWithSwarms(
+    earthquakes: EarthquakeEntity[],
+    limit: number,
+    maxDistanceInKm: number,
+    timeIntervalInDays: number,
+    sensivity: number,
+  ): FullEarthquakesDataWithSwarms {
+    const { backgrounds, ...mainEartquakesData } = this.getFullEartquakesData(earthquakes, limit);
+    
+    console.log(backgrounds.length);
+
+    const swarms = this.calculateEarthquakeSwarms(
+      backgrounds,
+      maxDistanceInKm,
+      timeIntervalInDays,
+      sensivity,
+    );
+
+    return {
+      ...mainEartquakesData,
+      ...swarms,
+    };
+  }
+
+  getFullEartquakesData(earthquakes: EarthquakeEntity[], limit: number): FullEarthquakesData {
     const sortEartquakes = earthquakes.sort((a, b) => a.date.getTime() - b.date.getTime());
     const startDate = sortEartquakes[0].date;
     const endDate = sortEartquakes[sortEartquakes.length - 1].date;
@@ -70,11 +126,9 @@ export class AppService {
 
       if (element.force >= limit) {
         earthquakes.splice(index, 1);
-        mains.push({
-          ...element,
-          id: `${element.id}`,
-          relationsCount: 2,
-        });
+        mains.push(
+          this.mapEarthquakeEntityToEarthquake(element, 2)
+        );
       }
     }
 
@@ -115,12 +169,9 @@ export class AppService {
         ) {
           nestedMainMarks.push(mainEarthquake);
           earthquakes.splice(index, 1);
-          aftershocks.push({
-            ...earthquake,
-            id: `${earthquake.id}`,
-            relationsCount: 1,
-            parentId: mainEarthquake.id,
-          });
+          aftershocks.push(
+            this.mapEarthquakeEntityToAftershock(earthquake, 1, mainEarthquake.id)
+          );
 
           aftershockTimelines.push({
             sourceId: mainEarthquake.id,
@@ -142,6 +193,74 @@ export class AppService {
       nestedMainMarks,
       startDate,
       endDate,
+      backgrounds: earthquakes.map(
+        earthquake => this.mapEarthquakeEntityToEarthquake(earthquake, 1)
+      ),
     };
+  }
+
+  calculateEarthquakeSwarms(
+    earthquakes: Earthquake[],
+    maxDistanceInKm: number,
+    timeIntervalInDays: number,
+    sensivity: number,
+  ): EarthquakeSwarms {
+    earthquakes = [
+      ...earthquakes.slice(0, 2000),
+      // ...earthquakes.slice(4000, 4500),
+      // ...earthquakes.slice(8000, 8500),
+      // ...earthquakes.slice(12000, 12500),
+    ];
+    console.log(earthquakes.length);
+    maxDistanceInKm = 10;
+    sensivity = 10;
+    timeIntervalInDays = 15;
+    const epsilon = maxDistanceInKm * 1000 + timeIntervalInDays;
+    const minimumPoints = 5;
+
+    console.log(minimumPoints);
+
+    const distanceFunction = (a: Earthquake, b: Earthquake): number => {
+      const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+      return Math.abs(getKmBetweenCoordinates(a, b) * 1000 + parseMsToDays(dateDiff));
+    };
+
+    const start = performance.now();
+
+    const { clusters, noise } = dbscan<Earthquake>({
+      dataset: earthquakes,
+      epsilon,
+      minimumPoints,
+      distanceFunction,
+    });
+
+    console.log(clusters.length);
+
+    const duration = performance.now() - start;
+    console.log('finished');
+    console.log(`\nВремя получения кластеров: ${duration}`);
+
+    const mapIndexesToEartquakes = (indexes: number[], clusterId =''): SwarmEarthquake[] => {
+      return indexes.map(index => ({
+        ...earthquakes[index],
+        parentId: clusterId,
+      }));
+    };
+
+    return {
+      contours: clusters.map((cluster, index) => {
+        const earthquakes = mapIndexesToEartquakes(cluster);
+        const points = convexHull(earthquakes);
+        if (points.length <= 1) return [];
+        return [
+          ...points,
+          points[0],
+        ];
+      }),
+      swarms: clusters.map((cluster, index) => 
+        earthquakes = mapIndexesToEartquakes(cluster, `swarm-${index}`)
+      ),
+      backgrounds: mapIndexesToEartquakes(noise),
+    }
   }
 }

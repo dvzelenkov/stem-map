@@ -23,3 +23,64 @@ export function getKmBetweenCoordinates(
 function deg2rad(deg: number) {
   return deg * (Math.PI/180)
 }
+
+export const getContourPoints = (data: Coordinates[]): Coordinates[] => {
+  return data.filter((point, index) => {
+    const isContourPoint = checkIsContourPoint(point, data);
+    if (isContourPoint) data.splice(index, 1);
+    return isContourPoint;
+  });
+}
+
+const checkIsContourPoint = (
+  { latitude, longitude }: Coordinates,
+  data: Coordinates[],
+): boolean => {
+  let isMaxLatitude = true;
+  let isMinLatitude = true;
+  let isMaxLongitude = true;
+  let isMinLongitude = true;
+
+  for (const point of data) {
+    if (point.latitude > latitude) isMaxLatitude = false;
+    if (point.latitude < latitude) isMinLatitude = false;
+    if (point.longitude > longitude) isMaxLongitude = false;
+    if (point.longitude < longitude) isMinLongitude = false;
+  }
+
+  return isMaxLatitude || isMinLatitude || isMaxLongitude || isMinLongitude;
+}
+
+function orientation(p: Coordinates, q: Coordinates, r: Coordinates): number {
+  const val = (q.latitude - p.latitude) * (r.longitude - q.longitude) - (q.longitude - p.longitude) * (r.latitude - q.latitude);
+  if (val === 0) return 0;  // коллинеарны
+  return val > 0 ? 1 : 2;  // по часовой стрелке или против
+}
+
+export function convexHull(points: Coordinates[]): Coordinates[] {
+  const n = points.length;
+  if (n < 3) return points;
+
+  let l = 0;
+  for (let i = 1; i < n; i++) {
+    if (points[i].latitude < points[l].latitude || (points[i].latitude === points[l].latitude && points[i].longitude < points[l].longitude)) {
+      l = i;
+    }
+  }
+
+  const hull: Coordinates[] = [];
+  let p = l, q: number;
+
+  do {
+    hull.push(points[p]);
+    q = (p + 1) % n;
+    for (let r = 0; r < n; r++) {
+      if (orientation(points[p], points[q], points[r]) === 2) {
+        q = r;
+      }
+    }
+    p = q;
+  } while (p !== l);
+
+  return hull;
+}
