@@ -1,11 +1,11 @@
-import DeckGL from '@deck.gl/react/typed';
+import DeckGL from '@deck.gl/react';
 import Map from 'react-map-gl/maplibre';
 import { ChangeEvent, useEffect, useState } from 'react';
 import { Stem } from '../classes/stem';
 import { RelationData, Aftershock, Earthquake, GeoData, NestedEarthquake, FullEarthquakesDataWithSwarms, Coordinates } from '@study/shared';
 import { Relation } from '../classes/relation';
-import { LayersList, PickingInfo } from '@deck.gl/core/typed';
-import { DataFilterExtension } from '@deck.gl/extensions/typed';
+import { LayersList, PickingInfo } from '@deck.gl/core';
+import { DataFilterExtension } from '@deck.gl/extensions';
 import Button from '@mui/material/Button';
 import { Box, Checkbox, FormControlLabel, Paper, Slider, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -13,7 +13,7 @@ import FileDownloadDoneIcon from '@mui/icons-material/FileDownloadDone';
 import axios, { AxiosResponse } from 'axios';
 import { NestedMark } from '../classes/nested-mark';
 import { VisuallyHiddenInput } from '../components/hidden-input';
-import {SolidPolygonLayer} from '@deck.gl/layers/typed';
+import { SolidPolygonLayer } from '@deck.gl/layers';
 
 import {
   BACKGROUND_COLOR,

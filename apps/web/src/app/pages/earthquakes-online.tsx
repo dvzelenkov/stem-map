@@ -1,10 +1,10 @@
-import DeckGL from '@deck.gl/react/typed';
+import DeckGL from '@deck.gl/react';
 import Map from 'react-map-gl/maplibre';
 import { useEffect, useState } from 'react';
 import { Stem } from '../classes/stem';
 import { RelationData, Earthquake } from '@study/shared';
 import { Relation } from '../classes/relation';
-import { LayersList, PickingInfo } from '@deck.gl/core/typed';
+import { LayersList, PickingInfo } from '@deck.gl/core';
 import Button from '@mui/material/Button';
 import { Paper } from '@mui/material';
 import socket from '../services/websocket';

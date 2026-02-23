@@ -1,5 +1,5 @@
-import { ScatterplotLayer, ScatterplotLayerProps } from '@deck.gl/layers/typed';
-import { DataFilterExtensionProps } from '@deck.gl/extensions/typed';
+import { ScatterplotLayer, ScatterplotLayerProps } from '@deck.gl/layers';
+import { DataFilterExtensionProps } from '@deck.gl/extensions';
 import { NestedEarthquake } from '@study/shared';
 
 export class NestedMark extends ScatterplotLayer<NestedEarthquake> {

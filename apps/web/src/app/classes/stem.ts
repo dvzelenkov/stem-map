@@ -1,5 +1,5 @@
-import { ColumnLayer, ColumnLayerProps } from '@deck.gl/layers/typed';
-import { DataFilterExtensionProps } from '@deck.gl/extensions/typed';
+import { ColumnLayer, ColumnLayerProps } from '@deck.gl/layers';
+import { DataFilterExtensionProps } from '@deck.gl/extensions';
 import { StemData } from '@study/shared';
 
 export class Stem<ExtraData> extends ColumnLayer<ExtraData & StemData> {

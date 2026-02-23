@@ -28,8 +28,8 @@ import path from 'path';
 
 @Injectable()
 export class EarthquakeService {
-  generator: NodeJS.Timer;
-  sender: NodeJS.Timer;
+  generator: ReturnType<typeof setInterval>;
+  sender: ReturnType<typeof setInterval>;
 
   constructor(
     private dataSource: DataSource,
