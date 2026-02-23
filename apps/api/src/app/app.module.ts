@@ -5,6 +5,8 @@ import { ConfigModule } from '@nestjs/config';
 import { CoreModule } from '@study/core';
 import { AppService } from './app.service';
 import config from './configuration/config';
+import { WebsocketGateway } from './websocket.getaway';
+import { EarthquakeService } from './earthquake.service';
 
 @Module({
   imports: [
@@ -12,6 +14,10 @@ import config from './configuration/config';
     CoreModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    WebsocketGateway,
+    EarthquakeService,
+  ],
 })
 export class AppModule {}

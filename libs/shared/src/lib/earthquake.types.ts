@@ -1,5 +1,4 @@
-import { GeoData, RelationData, StemData } from "./stem.types";
-import { Coordinates } from "./utils";
+import { Coordinates, GeoData, RelationData, StemData } from "./stem.types";
 
 export interface Earthquake extends StemData {
   force: number;

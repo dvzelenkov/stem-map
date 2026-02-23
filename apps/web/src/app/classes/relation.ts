@@ -6,7 +6,7 @@ export class Relation extends ArcLayer<RelationData> {
   constructor(props: Partial<ArcLayerProps<RelationData> & DataFilterExtensionProps>) {
     super({
       pickable: true,
-      getWidth: 300,
+      getWidth: 500,
       widthUnits: 'meters',
       getHeight: 0.1,
       ...props,

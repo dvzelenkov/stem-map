@@ -1,7 +1,4 @@
-export interface Coordinates {
-  longitude: number;
-  latitude: number;
-}
+import { Coordinates } from "../stem.types";
 
 export function getKmBetweenCoordinates(
   point1: Coordinates,
@@ -83,4 +80,13 @@ export function convexHull(points: Coordinates[]): Coordinates[] {
   } while (p !== l);
 
   return hull;
+}
+
+export function mapCoordinatesToNumbers(
+  coords: Coordinates,
+  height: number,
+): number[] {
+  const { longitude, latitude } = coords;
+
+  return [longitude, latitude, height];
 }

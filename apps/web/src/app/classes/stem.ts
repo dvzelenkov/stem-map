@@ -9,7 +9,7 @@ export class Stem<ExtraData> extends ColumnLayer<ExtraData & StemData> {
       extruded: true,
       pickable: true,
       elevationScale: 2000,
-      getElevation: stem => 5 * stem.relationsCount,
+      getElevation: stem => 5 * stem.levelsCount,
       getPosition: stem => [stem.longitude, stem.latitude],
       ...props,
     });

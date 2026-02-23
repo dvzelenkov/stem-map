@@ -1,46 +1,36 @@
-import styles from './app.module.scss';
 import DeckGL from '@deck.gl/react/typed';
-import Map from 'react-map-gl';
-import maplibregl from 'maplibre-gl';
+import Map from 'react-map-gl/maplibre';
 import { ChangeEvent, useEffect, useState } from 'react';
-import { Stem } from './classes/stem';
+import { Stem } from '../classes/stem';
 import { RelationData, Aftershock, Earthquake, GeoData, NestedEarthquake, FullEarthquakesDataWithSwarms, Coordinates } from '@study/shared';
-import { Relation } from './classes/relation';
+import { Relation } from '../classes/relation';
 import { LayersList, PickingInfo } from '@deck.gl/core/typed';
-import { Color } from '@deck.gl/core/typed';
 import { DataFilterExtension } from '@deck.gl/extensions/typed';
 import Button from '@mui/material/Button';
 import { Box, Checkbox, FormControlLabel, Paper, Slider, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import FileDownloadDoneIcon from '@mui/icons-material/FileDownloadDone';
 import axios, { AxiosResponse } from 'axios';
-import { NestedMark } from './classes/nested-mark';
-import { VisuallyHiddenInput } from './components/hidden-input';
+import { NestedMark } from '../classes/nested-mark';
+import { VisuallyHiddenInput } from '../components/hidden-input';
 import {SolidPolygonLayer} from '@deck.gl/layers/typed';
 
+import {
+  BACKGROUND_COLOR,
+  INITIAL_VIEW_STATE,
+  MAIN_COLOR,
+  MAIN_LINE_COLOR,
+  SECONDARY_COLOR,
+  SECONDARY_LINE_COLOR,
+  SELECT_BACKGROUND_COLOR,
+  SELECT_MAIN_COLOR,
+  SELECT_SECONDARY_COLOR,
+  SWARM_COLOR,
+  SWARM_LINE_COLOR,
+  SWARM_SELECTED_COLOR,
+} from '../constants';
+
 export function App() {
-  // Viewport settings
-  const INITIAL_VIEW_STATE = {
-    latitude: 56.06,
-    longitude: 113.9,
-    zoom: 5,
-  };
-
-  const MAIN_COLOR: Color = [221, 21, 14];
-  const MAIN_LINE_COLOR: Color = [250, 89, 86];
-  const SELECT_MAIN_COLOR: Color = [245, 169, 46];
-  
-  const SECONDARY_COLOR: Color = [2, 71, 140];
-  const SECONDARY_LINE_COLOR: Color = [125, 184, 247];
-  const SELECT_SECONDARY_COLOR: Color = [125, 184, 247];
-
-  const BACKGROUND_COLOR: Color = [182, 178, 174];
-  const SELECT_BACKGROUND_COLOR: Color = [223, 229, 232];
-
-  const SWARM_COLOR: Color = [242, 226, 210, 150];
-  const SWARM_LINE_COLOR: Color = [159, 183, 185, 150];
-  const SWARM_SELECTED_COLOR: Color = [250, 245, 239, 150];
-
   const [file, setFile] = useState<File>();
   const [filterLimit, setFilterLimit] = useState(14);
   const [selectedId, setSelectedId] = useState('');
@@ -94,7 +84,7 @@ export function App() {
         getFillColor: selectedId,
       },
       autoHighlight: true,
-      highlightColor: SELECT_BACKGROUND_COLOR,
+      highlightColor: SELECT_BACKGROUND_COLOR as number[],
       extensions: [dataFilter],
       getFilterValue: (d: Earthquake) => new Date(d.date).getTime(),
       filterRange: [sliderDates[0], sliderDates[1]],
@@ -107,7 +97,7 @@ export function App() {
         getFillColor: selectedId,
       },
       autoHighlight: true,
-      highlightColor: SELECT_MAIN_COLOR,
+      highlightColor: SELECT_MAIN_COLOR as number[],
       extensions: [dataFilter],
       getFilterValue: (d: Earthquake) => new Date(d.date).getTime(),
       filterRange: [sliderDates[0], sliderDates[1]],
@@ -129,7 +119,7 @@ export function App() {
       data: shownAftershocks,
       getFillColor: () => SECONDARY_COLOR,
       autoHighlight: true,
-      highlightColor: SELECT_SECONDARY_COLOR,
+      highlightColor: SELECT_SECONDARY_COLOR as number[],
       extensions: [dataFilter],
       getFilterValue: (d: Earthquake) => new Date(d.date).getTime(),
       filterRange: [sliderDates[0], sliderDates[1]],
@@ -187,7 +177,7 @@ export function App() {
       getLineColor: SWARM_LINE_COLOR,
       pickable: true,
       autoHighlight: true,
-      highlightColor: SWARM_SELECTED_COLOR,
+      highlightColor: SWARM_SELECTED_COLOR as number[],
       // extensions: [dataFilter],
       // getFilterValue: (d: Earthquake) => new Date(d.date).getTime(),
       // filterRange: [sliderDates[0], sliderDates[1]],
@@ -226,6 +216,7 @@ export function App() {
 
   const setData = (data: FullEarthquakesDataWithSwarms) => {
     if (data && data.mains) {
+      console.log(data.mains);
       setMains(data.mains);
       setAftershocks(data.aftershocks);
       setMainTimelines(data.mainTimelines);
@@ -272,8 +263,27 @@ export function App() {
     },
   ] : [];
 
+  useEffect(() => {
+    console.log(mains);
+    if (mains && mains.length > 0) {
+      setStartDate(new Date(mains[0].date));
+      setEndDate(new Date(mains[mains.length - 1].date));
+      setSliderDates([
+        new Date(mains[0].date).getTime(),
+        new Date(mains[mains.length - 1].date).getTime(),
+      ]);
+    }
+  }, [mains]);
+
   return (
-    <div className={styles['app']} onContextMenu={evt => evt.preventDefault()}>
+    <div
+      style={{
+        position: 'relative',
+        textAlign: 'center',
+        height: '100vh',
+      }}
+      onContextMenu={evt => evt.preventDefault()}
+    >
       <DeckGL
         initialViewState={INITIAL_VIEW_STATE}
         controller={true}
@@ -283,7 +293,7 @@ export function App() {
         onClick={(info: PickingInfo) => { info.object?.id ? setSelectedId(info.object.id) : setSelectedId('')}}
         getTooltip={({object}) => object && object.force && `K: ${object.force}${'\n'}Дата: 0${new Date(object.date).getDay()}.0${new Date(object.date).getMonth()}.${new Date(object.date).getFullYear()}${'\n'}Ширина: ${object.latitude}${'\n'}Долгота: ${object.longitude}`}
       >
-        <Map mapLib={maplibregl} mapStyle={'https://api.maptiler.com/maps/outdoor-v2/style.json?key=EY1glioABfpXI9vfzMwl'} />
+        <Map mapStyle={'https://api.maptiler.com/maps/outdoor-v2/style.json?key=EY1glioABfpXI9vfzMwl'} />
       </DeckGL>
       <Paper
         elevation={3}
