@@ -1,4 +1,3 @@
-import { StrictMode } from 'react';
 import * as ReactDOM from 'react-dom/client';
 import {
   createBrowserRouter,
@@ -7,6 +6,7 @@ import {
 
 import App from './app/pages';
 import EarthquakesOnline from './app/pages/earthquakes-online';
+import TrunkMapPage from './app/pages/trunk-map';
 
 const router = createBrowserRouter([
   {
@@ -17,13 +17,15 @@ const router = createBrowserRouter([
     path: 'earthquakes-online',
     element: <EarthquakesOnline />,
   },
+  {
+    path: 'trunk-map',
+    element: <TrunkMapPage />,
+  },
 ]);
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );
 root.render(
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>
+  <RouterProvider router={router} />
 );
