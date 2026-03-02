@@ -49,8 +49,9 @@ const MIN_COLUMN_RADIUS = 900;
 const MAX_COLUMN_RADIUS = 9310;
 const ALL_LAYERS_FILTER_ID = '__all_layers__';
 const EDGE_LAYER_BASE_ALTITUDE = 2500;
-const EDGE_LAYER_ALTITUDE_STEP = 20000;
+const EDGE_LAYER_ALTITUDE_STEP = 15000;
 const EDGE_IN_LAYER_ALTITUDE_STEP = 220;
+const COLUMN_ELEVATION_UNIT = 3500;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -69,7 +70,7 @@ const getEdgeAltitudeScaleByZoom = (zoom: number): number => {
   const normalizedZoom = clamp((zoom - 3) / 7, 0, 1);
   // At far zoom (small zoom value) edges are higher on Z, and
   // at near zoom edges get lower to avoid excessive vertical spread.
-  return 2.3 - normalizedZoom * 1.6;
+  return 4.4 - normalizedZoom * 4.1;
 };
 
 const getEdgeLayerAltitude = (
@@ -221,6 +222,55 @@ export function TrunkMap({
     return countByTrunk;
   }, [data.edges, data.trunks]);
 
+  const layerEdgeCountById = useMemo(() => {
+    const edgeCountByLayerId = new globalThis.Map<string, number>();
+
+    for (const layer of orderedLayers) {
+      edgeCountByLayerId.set(layer.layer_id, 0);
+    }
+
+    for (const edge of data.edges) {
+      edgeCountByLayerId.set(
+        edge.layer_id,
+        (edgeCountByLayerId.get(edge.layer_id) ?? 0) + 1
+      );
+    }
+
+    return edgeCountByLayerId;
+  }, [data.edges, orderedLayers]);
+
+  const layerAltitudeOrderById = useMemo(() => {
+    const rankedLayers = [...orderedLayers].sort((left, right) => {
+      const leftEdgeCount = layerEdgeCountById.get(left.layer_id) ?? 0;
+      const rightEdgeCount = layerEdgeCountById.get(right.layer_id) ?? 0;
+
+      if (leftEdgeCount !== rightEdgeCount) {
+        // More connected layers should be lower.
+        return rightEdgeCount - leftEdgeCount;
+      }
+
+      // Keep deterministic order when edge counts are equal.
+      return (left.order ?? 0) - (right.order ?? 0);
+    });
+
+    const orderByLayerId = new globalThis.Map<string, number>();
+    rankedLayers.forEach((layer, index) => {
+      orderByLayerId.set(layer.layer_id, index);
+    });
+
+    return orderByLayerId;
+  }, [layerEdgeCountById, orderedLayers]);
+
+  const maxConnectedLayersCount = useMemo(() => {
+    let maxCount = 1;
+    for (const count of connectedLayersCountByTrunk.values()) {
+      if (count > maxCount) {
+        maxCount = count;
+      }
+    }
+    return maxCount;
+  }, [connectedLayersCountByTrunk]);
+
   const trunksWithCopies = useMemo<TrunkWithCopy[]>(() => {
     const copyLayerId =
       activeLayerId === ALL_LAYERS_FILTER_ID
@@ -246,10 +296,8 @@ export function TrunkMap({
   const edgeAltitudeScaleByZoom = getEdgeAltitudeScaleByZoom(currentZoom);
 
   const visibleEdges = useMemo<VisibleEdge[]>(() => {
-    const layerOrderById = new globalThis.Map<string, number>();
     const edgeIndexByLayerId = new globalThis.Map<string, number>();
-    orderedLayers.forEach((layer, index) => {
-      layerOrderById.set(layer.layer_id, index);
+    orderedLayers.forEach((layer) => {
       edgeIndexByLayerId.set(layer.layer_id, 0);
     });
 
@@ -275,14 +323,21 @@ export function TrunkMap({
           source,
           target,
           layerAltitude: getEdgeLayerAltitude(
-            layerOrderById.get(edge.layer_id) ?? 0,
+            layerAltitudeOrderById.get(edge.layer_id) ?? 0,
             edgeOrderIndexInLayer,
             edgeAltitudeScaleByZoom
           ),
         };
       })
       .filter((edge): edge is VisibleEdge => edge !== null);
-  }, [activeLayerId, data.edges, edgeAltitudeScaleByZoom, orderedLayers, trunkById]);
+  }, [
+    activeLayerId,
+    data.edges,
+    edgeAltitudeScaleByZoom,
+    layerAltitudeOrderById,
+    orderedLayers,
+    trunkById,
+  ]);
 
   const layers: LayersList = [
     new TrunkRelation<VisibleEdge>({
@@ -313,11 +368,11 @@ export function TrunkMap({
         item.trunk_id === selectedTrunkId ? SELECTED_COLOR : NODE_COLOR,
       getLineColor: [255, 255, 255, 240],
       lineWidthMinPixels: 1,
-      getElevation: (item) =>
-        Math.max(1, item.connectedLayersCount) * 3500 * heightScaleByZoom,
+      getElevation: () =>
+        maxConnectedLayersCount * COLUMN_ELEVATION_UNIT * heightScaleByZoom,
       updateTriggers: {
         getFillColor: [activeLayerId, selectedTrunkId],
-        getElevation: [data.edges.length, heightScaleByZoom],
+        getElevation: [heightScaleByZoom, maxConnectedLayersCount],
         radius: currentRadius,
       },
     }),
