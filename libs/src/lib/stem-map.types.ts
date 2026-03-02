@@ -8,21 +8,21 @@ export interface Layer {
   order?: number;
 }
 
-export interface TrunkGeo {
+export interface StemGeo {
   lat: number;
   lon: number;
 }
 
-export interface Trunk {
-  trunk_id: string;
+export interface Stem {
+  stem_id: string;
   label?: string;
-  geo: TrunkGeo;
+  geo: StemGeo;
   properties?: Record<string, unknown>;
 }
 
-export interface TrunkCopy {
+export interface StemCopy {
   copy_id: string;
-  trunk_id: string;
+  stem_id: string;
   layer_id: string;
   layer_value: string | number | null;
 }
@@ -30,31 +30,30 @@ export interface TrunkCopy {
 export interface Edge {
   edge_id: string;
   layer_id: string;
-  source_trunk_id: string;
-  target_trunk_id: string;
+  source_stem_id: string;
+  target_stem_id: string;
   directed: boolean;
   weight: number | null;
-  edge_type: string | null;
 }
 
-export interface TrunkMapInputData {
+export interface StemMapInputData {
   layers: Layer[];
-  trunks: Trunk[];
-  copies: TrunkCopy[] | 'implicit';
+  stems: Stem[];
+  copies: StemCopy[] | 'implicit';
   edges: Edge[];
 }
 
 export interface LayerValueResolverArgs {
   layer: Layer;
-  trunk: Trunk;
+  stem: Stem;
 }
 
 export type LayerValueResolver = (
   args: LayerValueResolverArgs
 ) => string | number | null | undefined;
 
-export interface TrunkMapProps {
-  data: TrunkMapInputData;
+export interface StemMapProps {
+  data: StemMapInputData;
   mapStyle?: string;
   width?: string | number;
   height?: string | number;

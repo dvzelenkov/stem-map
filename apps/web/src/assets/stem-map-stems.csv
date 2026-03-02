@@ -1,0 +1,7 @@
+stem_id,label,lat,lon,time,class,depth
+stem-1,Alpha,54.9,111.2,1,A,10
+stem-2,Beta,57.6,116.8,2,B,20
+stem-3,Gamma,58.1,109.4,3,A,35
+stem-4,Delta,53.7,118.5,4,C,15
+stem-5,Epsilon,55.4,114.1,5,B,28
+stem-6,Zeta,56.8,112.7,6,C,12

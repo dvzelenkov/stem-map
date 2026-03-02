@@ -1,0 +1,8 @@
+edge_id,attribute_name,source_stem_id,target_stem_id,directed,weight
+edge-time-1,time,stem-1,stem-2,false,1
+edge-time-2,time,stem-2,stem-3,true,2
+edge-time-3,time,stem-4,stem-5,false,1
+edge-class-1,class,stem-1,stem-3,false,3
+edge-class-2,class,stem-2,stem-5,false,2
+edge-depth-1,depth,stem-4,stem-1,true,2
+edge-depth-2,depth,stem-6,stem-3,false,1

@@ -1,7 +1,7 @@
 import { ColumnLayer, ColumnLayerProps } from '@deck.gl/layers';
 
-export interface TrunkColumnData {
-  trunk_id: string;
+export interface StemColumnData {
+  stem_id: string;
   geo: {
     lat: number;
     lon: number;
@@ -11,7 +11,7 @@ export interface TrunkColumnData {
   } | null;
 }
 
-export class TrunkColumn<TData extends TrunkColumnData> extends ColumnLayer<TData> {
+export class StemColumn<TData extends StemColumnData> extends ColumnLayer<TData> {
   constructor(props: Partial<ColumnLayerProps<TData>>) {
     super({
       pickable: true,

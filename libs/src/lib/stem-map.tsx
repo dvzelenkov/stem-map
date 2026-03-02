@@ -5,29 +5,29 @@ import { useEffect, useMemo, useState } from 'react';
 import { Box, FormControl, InputLabel, MenuItem, Paper, Select, SelectChangeEvent, Typography } from '@mui/material';
 import MapLibre from 'react-map-gl/maplibre';
 
-import { TrunkColumn } from './classes/trunk-column';
-import { TrunkRelation } from './classes/trunk-relation';
+import { StemColumn } from './classes/stem-column';
+import { StemRelation } from './classes/stem-relation';
 import {
   Edge,
   Layer,
-  Trunk,
-  TrunkCopy,
-  TrunkMapProps,
-} from './trunk-map.types';
+  Stem,
+  StemCopy,
+  StemMapProps,
+} from './stem-map.types';
 import {
   buildCopies,
   getOrderedLayers,
-  validateTrunkMapInput,
-} from './trunk-map.utils';
+  validateStemMapInput,
+} from './stem-map.utils';
 
-interface TrunkWithCopy extends Trunk {
-  copy: TrunkCopy | null;
+interface StemWithCopy extends Stem {
+  copy: StemCopy | null;
   connectedLayersCount: number;
 }
 
 interface VisibleEdge extends Edge {
-  source: Trunk;
-  target: Trunk;
+  source: Stem;
+  target: Stem;
   layerAltitude: number;
 }
 
@@ -70,8 +70,6 @@ const getHeightScaleByRadius = (radius: number): number =>
 
 const getEdgeAltitudeScaleByZoom = (zoom: number): number => {
   const normalizedZoom = clamp((zoom - 3) / 7, 0, 1);
-  // At far zoom (small zoom value) edges are higher on Z, and
-  // at near zoom edges get lower to avoid excessive vertical spread.
   return 4.4 - normalizedZoom * 4.1;
 };
 
@@ -86,24 +84,24 @@ const getEdgeLayerAltitude = (
   return (baseAltitude + edgeOffsetInsideLayer) * edgeAltitudeScale;
 };
 
-const getTooltipText = (item: TrunkWithCopy): string => {
-  const label = item.label ? `Label: ${item.label}\n` : '';
+const getTooltipText = (item: StemWithCopy): string => {
+  const label = item.label ? `Подпись: ${item.label}\n` : '';
   const value =
     item.copy?.layer_value !== null && item.copy?.layer_value !== undefined
       ? String(item.copy.layer_value)
       : 'null';
 
-  return `${label}Trunk: ${item.trunk_id}\nLayer value: ${value}\nConnected layers: ${item.connectedLayersCount}\nLat: ${item.geo.lat}\nLon: ${item.geo.lon}`;
+  return `${label}Стем: ${item.stem_id}\nЗначение слоя: ${value}\nСвязанных слоёв: ${item.connectedLayersCount}\nШирота: ${item.geo.lat}\nДолгота: ${item.geo.lon}`;
 };
 
-const isTrunkWithCopy = (value: unknown): value is TrunkWithCopy => {
+const isStemWithCopy = (value: unknown): value is StemWithCopy => {
   if (!value || typeof value !== 'object') {
     return false;
   }
 
-  const candidate = value as Partial<TrunkWithCopy>;
+  const candidate = value as Partial<StemWithCopy>;
   return Boolean(
-    candidate.trunk_id &&
+    candidate.stem_id &&
       candidate.geo &&
       typeof candidate.geo.lat === 'number' &&
       typeof candidate.geo.lon === 'number'
@@ -125,12 +123,12 @@ const isVisibleEdge = (value: unknown): value is VisibleEdge => {
   );
 };
 
-const isEdgeConnectedToSelectedTrunk = (
+const isEdgeConnectedToSelectedStem = (
   edge: VisibleEdge,
-  selectedTrunkId: string
+  selectedStemId: string
 ): boolean =>
-  edge.source_trunk_id === selectedTrunkId ||
-  edge.target_trunk_id === selectedTrunkId;
+  edge.source_stem_id === selectedStemId ||
+  edge.target_stem_id === selectedStemId;
 
 const getActiveLayer = (layers: Layer[], activeLayerId: string): Layer | undefined =>
   layers.find((layer) => layer.layer_id === activeLayerId);
@@ -148,7 +146,7 @@ const isWebGlAvailable = (): boolean => {
   );
 };
 
-export function TrunkMap({
+export function StemMap({
   data,
   mapStyle = DEFAULT_MAP_STYLE,
   width = '100%',
@@ -157,12 +155,12 @@ export function TrunkMap({
   showLabels = true,
   initialViewState,
   resolveLayerValue,
-}: TrunkMapProps) {
-  validateTrunkMapInput(data);
+}: StemMapProps) {
+  validateStemMapInput(data);
 
   const orderedLayers = useMemo(() => getOrderedLayers(data.layers), [data.layers]);
   const [activeLayerId, setActiveLayerId] = useState<string>(ALL_LAYERS_FILTER_ID);
-  const [selectedTrunkId, setSelectedTrunkId] = useState<string>('');
+  const [selectedStemId, setSelectedStemId] = useState<string>('');
   const [isWebGlSupported] = useState<boolean>(() => isWebGlAvailable());
   const [currentZoom, setCurrentZoom] = useState<number>(
     initialViewState?.zoom ?? DEFAULT_VIEW_STATE.zoom
@@ -198,38 +196,38 @@ export function TrunkMap({
     [data, resolveLayerValue]
   );
 
-  const trunkById = useMemo(
-    () => new globalThis.Map(data.trunks.map((trunk) => [trunk.trunk_id, trunk])),
-    [data.trunks]
+  const stemById = useMemo(
+    () => new globalThis.Map(data.stems.map((stem) => [stem.stem_id, stem])),
+    [data.stems]
   );
 
-  const copiesByLayerAndTrunk = useMemo(() => {
-    const map = new globalThis.Map<string, TrunkCopy>();
+  const copiesByLayerAndStem = useMemo(() => {
+    const map = new globalThis.Map<string, StemCopy>();
     for (const copy of copies) {
-      map.set(`${copy.layer_id}::${copy.trunk_id}`, copy);
+      map.set(`${copy.layer_id}::${copy.stem_id}`, copy);
     }
     return map;
   }, [copies]);
 
-  const connectedLayersCountByTrunk = useMemo(() => {
-    const trunkToLayerIds = new globalThis.Map<string, Set<string>>();
+  const connectedLayersCountByStem = useMemo(() => {
+    const stemToLayerIds = new globalThis.Map<string, Set<string>>();
 
-    for (const trunk of data.trunks) {
-      trunkToLayerIds.set(trunk.trunk_id, new Set<string>());
+    for (const stem of data.stems) {
+      stemToLayerIds.set(stem.stem_id, new Set<string>());
     }
 
     for (const edge of data.edges) {
-      trunkToLayerIds.get(edge.source_trunk_id)?.add(edge.layer_id);
-      trunkToLayerIds.get(edge.target_trunk_id)?.add(edge.layer_id);
+      stemToLayerIds.get(edge.source_stem_id)?.add(edge.layer_id);
+      stemToLayerIds.get(edge.target_stem_id)?.add(edge.layer_id);
     }
 
-    const countByTrunk = new globalThis.Map<string, number>();
-    for (const [trunkId, layerIds] of trunkToLayerIds) {
-      countByTrunk.set(trunkId, layerIds.size);
+    const countByStem = new globalThis.Map<string, number>();
+    for (const [stemId, layerIds] of stemToLayerIds) {
+      countByStem.set(stemId, layerIds.size);
     }
 
-    return countByTrunk;
-  }, [data.edges, data.trunks]);
+    return countByStem;
+  }, [data.edges, data.stems]);
 
   const layerEdgeCountById = useMemo(() => {
     const edgeCountByLayerId = new globalThis.Map<string, number>();
@@ -254,11 +252,9 @@ export function TrunkMap({
       const rightEdgeCount = layerEdgeCountById.get(right.layer_id) ?? 0;
 
       if (leftEdgeCount !== rightEdgeCount) {
-        // More connected layers should be lower.
         return rightEdgeCount - leftEdgeCount;
       }
 
-      // Keep deterministic order when edge counts are equal.
       return (left.order ?? 0) - (right.order ?? 0);
     });
 
@@ -272,31 +268,31 @@ export function TrunkMap({
 
   const maxConnectedLayersCount = useMemo(() => {
     let maxCount = 1;
-    for (const count of connectedLayersCountByTrunk.values()) {
+    for (const count of connectedLayersCountByStem.values()) {
       if (count > maxCount) {
         maxCount = count;
       }
     }
     return maxCount;
-  }, [connectedLayersCountByTrunk]);
+  }, [connectedLayersCountByStem]);
 
-  const trunksWithCopies = useMemo<TrunkWithCopy[]>(() => {
+  const stemsWithCopies = useMemo<StemWithCopy[]>(() => {
     const copyLayerId =
       activeLayerId === ALL_LAYERS_FILTER_ID
         ? orderedLayers[0]?.layer_id ?? ''
         : activeLayerId;
 
-    return data.trunks.map((trunk) => ({
-      ...trunk,
-      copy: copiesByLayerAndTrunk.get(`${copyLayerId}::${trunk.trunk_id}`) ?? null,
+    return data.stems.map((stem) => ({
+      ...stem,
+      copy: copiesByLayerAndStem.get(`${copyLayerId}::${stem.stem_id}`) ?? null,
       connectedLayersCount:
-        connectedLayersCountByTrunk.get(trunk.trunk_id) ?? 0,
+        connectedLayersCountByStem.get(stem.stem_id) ?? 0,
     }));
   }, [
     activeLayerId,
-    connectedLayersCountByTrunk,
-    copiesByLayerAndTrunk,
-    data.trunks,
+    connectedLayersCountByStem,
+    copiesByLayerAndStem,
+    data.stems,
     orderedLayers,
   ]);
 
@@ -317,8 +313,8 @@ export function TrunkMap({
           : edge.layer_id === activeLayerId
       )
       .map((edge) => {
-        const source = trunkById.get(edge.source_trunk_id);
-        const target = trunkById.get(edge.target_trunk_id);
+        const source = stemById.get(edge.source_stem_id);
+        const target = stemById.get(edge.target_stem_id);
 
         if (!source || !target) {
           return null;
@@ -345,12 +341,12 @@ export function TrunkMap({
     edgeAltitudeScaleByZoom,
     layerAltitudeOrderById,
     orderedLayers,
-    trunkById,
+    stemById,
   ]);
 
   const layers: LayersList = [
-    new TrunkRelation<VisibleEdge>({
-      id: `trunk-edges-${activeLayerId}`,
+    new StemRelation<VisibleEdge>({
+      id: `stem-edges-${activeLayerId}`,
       data: visibleEdges,
       getSourcePosition: (item) => [
         item.source.geo.lon,
@@ -363,53 +359,53 @@ export function TrunkMap({
         item.layerAltitude,
       ],
       getSourceColor: (item) => {
-        if (!selectedTrunkId) {
+        if (!selectedStemId) {
           return item.directed ? DIRECTED_EDGE_COLOR : EDGE_COLOR;
         }
 
-        return isEdgeConnectedToSelectedTrunk(item, selectedTrunkId)
+        return isEdgeConnectedToSelectedStem(item, selectedStemId)
           ? EDGE_HIGHLIGHT_COLOR
           : EDGE_DIMMED_COLOR;
       },
       getTargetColor: (item) => {
-        if (!selectedTrunkId) {
+        if (!selectedStemId) {
           return item.directed ? DIRECTED_EDGE_COLOR : EDGE_COLOR;
         }
 
-        return isEdgeConnectedToSelectedTrunk(item, selectedTrunkId)
+        return isEdgeConnectedToSelectedStem(item, selectedStemId)
           ? EDGE_HIGHLIGHT_COLOR
           : EDGE_DIMMED_COLOR;
       },
       widthUnits: 'pixels',
       getWidth: (item) => {
         const baseWidth = Math.max(1, (item.weight ?? 1) * 1.1);
-        if (!selectedTrunkId) {
+        if (!selectedStemId) {
           return baseWidth;
         }
-        return isEdgeConnectedToSelectedTrunk(item, selectedTrunkId)
+        return isEdgeConnectedToSelectedStem(item, selectedStemId)
           ? baseWidth + 1.2
           : baseWidth;
       },
       getHeight: 0.06,
       updateTriggers: {
-        getSourceColor: selectedTrunkId,
-        getTargetColor: selectedTrunkId,
-        getWidth: selectedTrunkId,
+        getSourceColor: selectedStemId,
+        getTargetColor: selectedStemId,
+        getWidth: selectedStemId,
       },
     }),
-    new TrunkColumn<TrunkWithCopy>({
-      id: `trunks-${activeLayerId}`,
-      data: trunksWithCopies,
+    new StemColumn<StemWithCopy>({
+      id: `stems-${activeLayerId}`,
+      data: stemsWithCopies,
       radius: currentRadius,
       elevationScale: 1.4,
       getFillColor: (item) =>
-        item.trunk_id === selectedTrunkId ? SELECTED_COLOR : NODE_COLOR,
+        item.stem_id === selectedStemId ? SELECTED_COLOR : NODE_COLOR,
       getLineColor: [255, 255, 255, 240],
       lineWidthMinPixels: 1,
       getElevation: () =>
         maxConnectedLayersCount * COLUMN_ELEVATION_UNIT * heightScaleByZoom,
       updateTriggers: {
-        getFillColor: [activeLayerId, selectedTrunkId],
+        getFillColor: [activeLayerId, selectedStemId],
         getElevation: [heightScaleByZoom, maxConnectedLayersCount],
         radius: currentRadius,
       },
@@ -418,11 +414,11 @@ export function TrunkMap({
 
   if (showLabels) {
     layers.push(
-      new TextLayer<TrunkWithCopy>({
-        id: `trunk-labels-${activeLayerId}`,
-        data: trunksWithCopies,
+      new TextLayer<StemWithCopy>({
+        id: `stem-labels-${activeLayerId}`,
+        data: stemsWithCopies,
         getPosition: (item) => [item.geo.lon, item.geo.lat],
-        getText: (item) => item.label ?? item.trunk_id,
+        getText: (item) => item.label ?? item.stem_id,
         getColor: [20, 20, 20, 220],
         getSize: 14,
         getPixelOffset: [0, 14],
@@ -449,7 +445,7 @@ export function TrunkMap({
         }}
       >
         <Typography variant="body1">
-          WebGL is not available in this browser environment.
+          WebGL недоступен в текущем окружении браузера.
         </Typography>
       </Box>
     );
@@ -473,8 +469,8 @@ export function TrunkMap({
           }
         }}
         onClick={(info) =>
-          setSelectedTrunkId(
-            (info.object as TrunkWithCopy | undefined)?.trunk_id ?? ''
+          setSelectedStemId(
+            (info.object as StemWithCopy | undefined)?.stem_id ?? ''
           )
         }
         getTooltip={({ object }) => {
@@ -482,12 +478,12 @@ export function TrunkMap({
             return null;
           }
 
-          if (isTrunkWithCopy(object)) {
+          if (isStemWithCopy(object)) {
             return getTooltipText(object);
           }
 
           if (isVisibleEdge(object)) {
-            return `Edge: ${object.edge_id}\nLayer: ${object.layer_id}\nSource: ${object.source_trunk_id}\nTarget: ${object.target_trunk_id}\nZ: ${Math.round(object.layerAltitude)}`;
+            return `Связь: ${object.edge_id}\nСлой: ${object.layer_id}\nИсточник: ${object.source_stem_id}\nЦель: ${object.target_stem_id}\nZ: ${Math.round(object.layerAltitude)}`;
           }
 
           return null;
@@ -509,20 +505,20 @@ export function TrunkMap({
         }}
       >
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
-          Layer
+          Слой
         </Typography>
         <FormControl size="small" fullWidth sx={{ mb: 1 }}>
-          <InputLabel id="trunk-map-layer-select-label">Layer</InputLabel>
+          <InputLabel id="stem-map-layer-select-label">Слой</InputLabel>
           <Select
-            labelId="trunk-map-layer-select-label"
+            labelId="stem-map-layer-select-label"
             value={activeLayerId}
-            label="Layer"
+            label="Слой"
             onChange={(event: SelectChangeEvent<string>) => {
-              setSelectedTrunkId('');
+              setSelectedStemId('');
               setActiveLayerId(event.target.value);
             }}
           >
-            <MenuItem value={ALL_LAYERS_FILTER_ID}>All layers</MenuItem>
+            <MenuItem value={ALL_LAYERS_FILTER_ID}>Все слои</MenuItem>
             {orderedLayers.map((layer) => (
               <MenuItem key={layer.layer_id} value={layer.layer_id}>
                 {layer.title}
@@ -531,11 +527,11 @@ export function TrunkMap({
           </Select>
         </FormControl>
         <Typography variant="caption" color="text.secondary">
-          Attribute: {activeLayer?.attribute_name ?? '-'}
+          Атрибут: {activeLayer?.attribute_name ?? '-'}
         </Typography>
       </Paper>
     </Box>
   );
 }
 
-export default TrunkMap;
+export default StemMap;

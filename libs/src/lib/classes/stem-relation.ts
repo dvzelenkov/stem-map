@@ -1,6 +1,6 @@
 import { ArcLayer, ArcLayerProps } from '@deck.gl/layers';
 
-export class TrunkRelation<TData> extends ArcLayer<TData> {
+export class StemRelation<TData> extends ArcLayer<TData> {
   constructor(props: Partial<ArcLayerProps<TData>>) {
     super({
       pickable: true,

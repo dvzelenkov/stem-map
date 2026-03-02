@@ -6,7 +6,8 @@ import {
 
 import App from './app/pages';
 import EarthquakesOnline from './app/pages/earthquakes-online';
-import TrunkMapPage from './app/pages/trunk-map';
+import StemMapPage from './app/pages/stem-map';
+import StemMapCsvPage from './app/pages/stem-map-csv';
 
 const router = createBrowserRouter([
   {
@@ -19,7 +20,11 @@ const router = createBrowserRouter([
   },
   {
     path: 'trunk-map',
-    element: <TrunkMapPage />,
+    element: <StemMapPage />,
+  },
+  {
+    path: 'trunk-map-csv',
+    element: <StemMapCsvPage />,
   },
 ]);
 
