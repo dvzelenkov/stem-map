@@ -45,6 +45,8 @@ const SELECTED_COLOR: [number, number, number, number] = [250, 120, 20, 255];
 const NODE_COLOR: [number, number, number, number] = [52, 109, 241, 220];
 const EDGE_COLOR: [number, number, number, number] = [80, 80, 80, 180];
 const DIRECTED_EDGE_COLOR: [number, number, number, number] = [169, 56, 244, 180];
+const EDGE_HIGHLIGHT_COLOR: [number, number, number, number] = [250, 120, 20, 255];
+const EDGE_DIMMED_COLOR: [number, number, number, number] = [130, 130, 130, 90];
 const MIN_COLUMN_RADIUS = 900;
 const MAX_COLUMN_RADIUS = 9310;
 const ALL_LAYERS_FILTER_ID = '__all_layers__';
@@ -122,6 +124,13 @@ const isVisibleEdge = (value: unknown): value is VisibleEdge => {
       candidate.target.geo
   );
 };
+
+const isEdgeConnectedToSelectedTrunk = (
+  edge: VisibleEdge,
+  selectedTrunkId: string
+): boolean =>
+  edge.source_trunk_id === selectedTrunkId ||
+  edge.target_trunk_id === selectedTrunkId;
 
 const getActiveLayer = (layers: Layer[], activeLayerId: string): Layer | undefined =>
   layers.find((layer) => layer.layer_id === activeLayerId);
@@ -353,11 +362,40 @@ export function TrunkMap({
         item.target.geo.lat,
         item.layerAltitude,
       ],
-      getSourceColor: (item) => (item.directed ? DIRECTED_EDGE_COLOR : EDGE_COLOR),
-      getTargetColor: (item) => (item.directed ? DIRECTED_EDGE_COLOR : EDGE_COLOR),
+      getSourceColor: (item) => {
+        if (!selectedTrunkId) {
+          return item.directed ? DIRECTED_EDGE_COLOR : EDGE_COLOR;
+        }
+
+        return isEdgeConnectedToSelectedTrunk(item, selectedTrunkId)
+          ? EDGE_HIGHLIGHT_COLOR
+          : EDGE_DIMMED_COLOR;
+      },
+      getTargetColor: (item) => {
+        if (!selectedTrunkId) {
+          return item.directed ? DIRECTED_EDGE_COLOR : EDGE_COLOR;
+        }
+
+        return isEdgeConnectedToSelectedTrunk(item, selectedTrunkId)
+          ? EDGE_HIGHLIGHT_COLOR
+          : EDGE_DIMMED_COLOR;
+      },
       widthUnits: 'pixels',
-      getWidth: (item) => Math.max(1, (item.weight ?? 1) * 1.1),
+      getWidth: (item) => {
+        const baseWidth = Math.max(1, (item.weight ?? 1) * 1.1);
+        if (!selectedTrunkId) {
+          return baseWidth;
+        }
+        return isEdgeConnectedToSelectedTrunk(item, selectedTrunkId)
+          ? baseWidth + 1.2
+          : baseWidth;
+      },
       getHeight: 0.06,
+      updateTriggers: {
+        getSourceColor: selectedTrunkId,
+        getTargetColor: selectedTrunkId,
+        getWidth: selectedTrunkId,
+      },
     }),
     new TrunkColumn<TrunkWithCopy>({
       id: `trunks-${activeLayerId}`,
