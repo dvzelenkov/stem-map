@@ -44,7 +44,6 @@ const DEFAULT_VIEW_STATE = {
 const SELECTED_COLOR: [number, number, number, number] = [250, 120, 20, 255];
 const NODE_COLOR: [number, number, number, number] = [52, 109, 241, 220];
 const EDGE_COLOR: [number, number, number, number] = [80, 80, 80, 180];
-const DIRECTED_EDGE_COLOR: [number, number, number, number] = [169, 56, 244, 180];
 const EDGE_HIGHLIGHT_COLOR: [number, number, number, number] = [250, 120, 20, 255];
 const EDGE_DIMMED_COLOR: [number, number, number, number] = [130, 130, 130, 90];
 const MIN_COLUMN_RADIUS = 900;
@@ -82,6 +81,31 @@ const getEdgeLayerAltitude = (
     EDGE_LAYER_BASE_ALTITUDE + layerOrderIndex * EDGE_LAYER_ALTITUDE_STEP;
   const edgeOffsetInsideLayer = edgeOrderIndexInLayer * EDGE_IN_LAYER_ALTITUDE_STEP;
   return (baseAltitude + edgeOffsetInsideLayer) * edgeAltitudeScale;
+};
+
+const normalizeHexColor = (value: string | undefined): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
+};
+
+const hexToRgba = (
+  color: string | undefined,
+  fallback: [number, number, number, number]
+): [number, number, number, number] => {
+  const normalized = normalizeHexColor(color);
+  if (!normalized) {
+    return fallback;
+  }
+
+  return [
+    parseInt(normalized.slice(1, 3), 16),
+    parseInt(normalized.slice(3, 5), 16),
+    parseInt(normalized.slice(5, 7), 16),
+    fallback[3],
+  ];
 };
 
 const getTooltipText = (item: StemWithCopy): string => {
@@ -246,6 +270,17 @@ export function StemMap({
     return edgeCountByLayerId;
   }, [data.edges, orderedLayers]);
 
+  const layerColorById = useMemo(() => {
+    const colorById = new globalThis.Map<string, [number, number, number, number]>();
+    for (const layer of orderedLayers) {
+      colorById.set(
+        layer.layer_id,
+        hexToRgba(data.layerColors?.[layer.layer_id], EDGE_COLOR)
+      );
+    }
+    return colorById;
+  }, [data.layerColors, orderedLayers]);
+
   const layerAltitudeOrderById = useMemo(() => {
     const rankedLayers = [...orderedLayers].sort((left, right) => {
       const leftEdgeCount = layerEdgeCountById.get(left.layer_id) ?? 0;
@@ -360,7 +395,7 @@ export function StemMap({
       ],
       getSourceColor: (item) => {
         if (!selectedStemId) {
-          return item.directed ? DIRECTED_EDGE_COLOR : EDGE_COLOR;
+          return layerColorById.get(item.layer_id) ?? EDGE_COLOR;
         }
 
         return isEdgeConnectedToSelectedStem(item, selectedStemId)
@@ -369,7 +404,7 @@ export function StemMap({
       },
       getTargetColor: (item) => {
         if (!selectedStemId) {
-          return item.directed ? DIRECTED_EDGE_COLOR : EDGE_COLOR;
+          return layerColorById.get(item.layer_id) ?? EDGE_COLOR;
         }
 
         return isEdgeConnectedToSelectedStem(item, selectedStemId)
@@ -388,8 +423,8 @@ export function StemMap({
       },
       getHeight: 0.06,
       updateTriggers: {
-        getSourceColor: selectedStemId,
-        getTargetColor: selectedStemId,
+        getSourceColor: [selectedStemId, data.layerColors],
+        getTargetColor: [selectedStemId, data.layerColors],
         getWidth: selectedStemId,
       },
     }),

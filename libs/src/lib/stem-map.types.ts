@@ -41,6 +41,7 @@ export interface StemMapInputData {
   stems: Stem[];
   copies: StemCopy[] | 'implicit';
   edges: Edge[];
+  layerColors?: Record<string, string>;
 }
 
 export interface LayerValueResolverArgs {
