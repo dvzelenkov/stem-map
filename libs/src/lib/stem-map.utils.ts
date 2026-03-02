@@ -56,12 +56,8 @@ export const buildCopies = (
 };
 
 export const validateStemMapInput = (data: StemMapInputData): void => {
-  if (!data.layers.length) {
-    throw new Error('StemMap: layers must be a non-empty array.');
-  }
-
-  if (!data.stems.length) {
-    throw new Error('StemMap: stems must be a non-empty array.');
+  if (!Array.isArray(data.layers) || !Array.isArray(data.stems) || !Array.isArray(data.edges)) {
+    throw new Error('StemMap: layers, stems and edges must be arrays.');
   }
 
   const layerIds = new Set(data.layers.map((layer) => layer.layer_id));

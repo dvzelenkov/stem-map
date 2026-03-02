@@ -665,6 +665,19 @@ export function StemMapCsvPage() {
     }
   };
 
+  const handleClearData = () => {
+    setStemsTable(null);
+    setEdgesTable(null);
+    setLayerColors({});
+    setActiveTab('stems');
+    setError('');
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(STEM_MAP_EDITOR_STORAGE_KEY);
+      localStorage.removeItem(STEM_MAP_STORAGE_KEY);
+    }
+  };
+
   return (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
       <Paper sx={{ p: 2 }}>
@@ -721,13 +734,18 @@ export function StemMapCsvPage() {
           <Button variant="text" onClick={() => navigate('/trunk-map')}>
             Назад на карту
           </Button>
-          <Button
-            variant="contained"
-            onClick={handleSaveAndOpenMap}
-            disabled={!stemsTable || !edgesTable}
-          >
-            Сохранить и открыть карту
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button variant="outlined" color="error" onClick={handleClearData}>
+              Очистить данные
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleSaveAndOpenMap}
+              disabled={!stemsTable || !edgesTable}
+            >
+              Сохранить и открыть карту
+            </Button>
+          </Stack>
         </Stack>
 
         {error && (
