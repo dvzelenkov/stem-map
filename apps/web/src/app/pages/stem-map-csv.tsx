@@ -1,9 +1,10 @@
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
   Button,
   Checkbox,
+  IconButton,
   MenuItem,
   Paper,
   Stack,
@@ -415,20 +416,173 @@ const updateCellValue = (
   };
 };
 
+const appendEmptyRow = (table: CsvTableData | null): CsvTableData | null => {
+  if (!table) {
+    return null;
+  }
+
+  const newRow = Object.fromEntries(table.headers.map((header) => [header, ''])) as CsvRow;
+  return {
+    ...table,
+    rows: [...table.rows, newRow],
+  };
+};
+
+const removeRow = (table: CsvTableData | null, rowIndex: number): CsvTableData | null => {
+  if (!table) {
+    return null;
+  }
+
+  if (table.rows.length <= 1) {
+    return null;
+  }
+
+  return {
+    ...table,
+    rows: table.rows.filter((_, index) => index !== rowIndex),
+  };
+};
+
+const addStemAttribute = (table: CsvTableData | null, attributeName: string): CsvTableData | null => {
+  if (!table) {
+    return null;
+  }
+
+  const trimmedName = attributeName.trim();
+  if (!trimmedName || table.headers.includes(trimmedName)) {
+    return table;
+  }
+
+  return {
+    headers: [...table.headers, trimmedName],
+    rows: table.rows.map((row) => ({
+      ...row,
+      [trimmedName]: '',
+    })),
+  };
+};
+
+const renameStemAttribute = (
+  table: CsvTableData | null,
+  previousName: string,
+  nextName: string
+): CsvTableData | null => {
+  if (!table || previousName === nextName || !table.headers.includes(previousName)) {
+    return table;
+  }
+
+  const headers = table.headers.map((header) => (header === previousName ? nextName : header));
+  const rows = table.rows.map((row) => {
+    const { [previousName]: previousValue, ...restRow } = row;
+    return {
+      ...restRow,
+      [nextName]: previousValue ?? '',
+    };
+  });
+
+  return { headers, rows };
+};
+
+const removeStemAttribute = (table: CsvTableData | null, attributeName: string): CsvTableData | null => {
+  if (!table || !table.headers.includes(attributeName)) {
+    return table;
+  }
+
+  return {
+    headers: table.headers.filter((header) => header !== attributeName),
+    rows: table.rows.map((row) => {
+      const { [attributeName]: _, ...restRow } = row;
+      return restRow;
+    }),
+  };
+};
+
+const replaceEdgeAttributeName = (
+  table: CsvTableData | null,
+  previousName: string,
+  nextName: string
+): CsvTableData | null => {
+  if (!table || previousName === nextName) {
+    return table;
+  }
+
+  return {
+    ...table,
+    rows: table.rows.map((row) => ({
+      ...row,
+      attribute_name: row.attribute_name === previousName ? nextName : row.attribute_name,
+    })),
+  };
+};
+
+const clearEdgeAttributeName = (
+  table: CsvTableData | null,
+  attributeName: string
+): CsvTableData | null => {
+  if (!table) {
+    return table;
+  }
+
+  return {
+    ...table,
+    rows: table.rows.map((row) => ({
+      ...row,
+      attribute_name: row.attribute_name === attributeName ? '' : row.attribute_name,
+    })),
+  };
+};
+
+const isFilledValue = (value: string | undefined): boolean => (value ?? '').trim() !== '';
+
+const isStemRowReadyForNext = (row: CsvRow, headers: string[]): boolean => {
+  const hasFilledBaseColumns = STEM_BASE_COLUMNS.every((columnName) => isFilledValue(row[columnName]));
+  if (!hasFilledBaseColumns) {
+    return false;
+  }
+
+  const attributeHeaders = headers.filter((header) => !STEM_BASE_COLUMNS.includes(header));
+  if (!attributeHeaders.length) {
+    return true;
+  }
+
+  return attributeHeaders.some((attributeHeader) => isFilledValue(row[attributeHeader]));
+};
+
+const isEdgeRowReadyForNext = (row: CsvRow, headers: string[]): boolean =>
+  headers
+    .filter((header) => header !== 'directed')
+    .every((header) => isFilledValue(row[header]));
+
 function EditableCsvTable({
   title,
   table,
+  titleControls,
   onChange,
+  onAddRow,
+  onDeleteRow,
+  canAddRow,
+  addRowDisabledReason,
   selectOptionsByHeader,
   getSelectOptionsByCell,
+  onHeaderClick,
+  onHeaderDelete,
+  isHeaderEditable,
   isCellInvalid,
   checkboxHeaders,
 }: {
   title: string;
   table: CsvTableData | null;
+  titleControls?: ReactNode;
   onChange: (rowIndex: number, header: string, value: string) => void;
+  onAddRow?: () => void;
+  onDeleteRow?: (rowIndex: number) => void;
+  canAddRow?: boolean;
+  addRowDisabledReason?: string;
   selectOptionsByHeader?: Partial<Record<string, string[]>>;
   getSelectOptionsByCell?: (rowIndex: number, header: string, row: CsvRow) => string[] | undefined;
+  onHeaderClick?: (header: string) => void;
+  onHeaderDelete?: (header: string) => void;
+  isHeaderEditable?: (header: string) => boolean;
   isCellInvalid?: (rowIndex: number, header: string, value: string) => boolean;
   checkboxHeaders?: string[];
 }) {
@@ -441,15 +595,59 @@ function EditableCsvTable({
       <Typography variant="h6" sx={{ mb: 2 }}>
         {title}
       </Typography>
+      {titleControls && <Box sx={{ mb: 1.5 }}>{titleControls}</Box>}
       <TableContainer>
         <Table size="small">
           <TableHead>
             <TableRow>
               {table.headers.map((header) => (
                 <TableCell key={header} sx={{ fontSize: 12, py: 1 }}>
-                  {header}
+                  {(() => {
+                    const editableHeader = isHeaderEditable?.(header) ?? false;
+                    return (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 0.5,
+                    }}
+                  >
+                    <Box
+                      component="button"
+                      type="button"
+                      onClick={() => editableHeader && onHeaderClick?.(header)}
+                      sx={{
+                        border: 'none',
+                        background: 'transparent',
+                        p: 0,
+                        m: 0,
+                        font: 'inherit',
+                        textAlign: 'left',
+                        color: 'inherit',
+                        cursor: editableHeader && onHeaderClick ? 'pointer' : 'default',
+                      }}
+                    >
+                      {header}
+                    </Box>
+                    {editableHeader && onHeaderDelete && (
+                      <IconButton
+                        size="small"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onHeaderDelete(header);
+                        }}
+                        sx={{ p: 0.2 }}
+                      >
+                        ×
+                      </IconButton>
+                    )}
+                  </Box>
+                    );
+                  })()}
                 </TableCell>
               ))}
+              {onDeleteRow && <TableCell sx={{ fontSize: 12, py: 1, width: 96 }}>Действия</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -518,11 +716,33 @@ function EditableCsvTable({
                     </TableCell>
                   );
                 })}
+                {onDeleteRow && (
+                  <TableCell sx={{ py: 0.5 }}>
+                    <Button size="small" color="error" onClick={() => onDeleteRow(rowIndex)}>
+                      Удалить
+                    </Button>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </TableContainer>
+      {onAddRow && (
+        <Button
+          size="small"
+          sx={{ mt: 1.5 }}
+          onClick={onAddRow}
+          disabled={canAddRow === false}
+        >
+          Добавить запись
+        </Button>
+      )}
+      {onAddRow && canAddRow === false && !!addRowDisabledReason && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          {addRowDisabledReason}
+        </Typography>
+      )}
     </Box>
   );
 }
@@ -542,6 +762,7 @@ export function StemMapCsvPage() {
   const [layerColors, setLayerColors] = useState<Record<string, string>>(
     restoredEditorData?.layerColors ?? {}
   );
+  const [newAttributeName, setNewAttributeName] = useState<string>('');
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
@@ -593,6 +814,34 @@ export function StemMapCsvPage() {
     [stemsTable]
   );
   const stemRows = useMemo(() => stemsTable?.rows ?? [], [stemsTable]);
+  const canAddStemRow = useMemo(() => {
+    if (!stemsTable || !stemsTable.rows.length) {
+      return true;
+    }
+
+    return stemsTable.rows.every((row) => isStemRowReadyForNext(row, stemsTable.headers));
+  }, [stemsTable]);
+  const canAddEdgeRow = useMemo(() => {
+    if (!edgesTable || !edgesTable.rows.length) {
+      return true;
+    }
+
+    return edgesTable.rows.every((row) => isEdgeRowReadyForNext(row, edgesTable.headers));
+  }, [edgesTable]);
+  const hasAttributeWithAtLeastTwoStems = useMemo(() => {
+    if (!stemsTable) {
+      return false;
+    }
+
+    return stemAttributeHeaders.some((attributeName) => {
+      const filledCount = stemRows.filter((stemRow) => {
+        const attributeValue = stemRow[attributeName];
+        return typeof attributeValue === 'string' && attributeValue.trim() !== '';
+      }).length;
+
+      return filledCount >= 2;
+    });
+  }, [stemAttributeHeaders, stemRows, stemsTable]);
 
   const handleUpload =
     (setter: (value: CsvTableData | null) => void, tab: StemMapCsvTab) =>
@@ -670,12 +919,200 @@ export function StemMapCsvPage() {
     setEdgesTable(null);
     setLayerColors({});
     setActiveTab('stems');
+    setNewAttributeName('');
     setError('');
 
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STEM_MAP_EDITOR_STORAGE_KEY);
       localStorage.removeItem(STEM_MAP_STORAGE_KEY);
     }
+  };
+
+  const handleAddStemAttribute = () => {
+    setError('');
+    const nextAttributeName = newAttributeName.trim();
+
+    if (!stemsTable) {
+      setError('Сначала загрузите CSV стволов.');
+      return;
+    }
+
+    if (!nextAttributeName) {
+      setError('Введите имя нового атрибута.');
+      return;
+    }
+
+    if (STEM_BASE_COLUMNS.includes(nextAttributeName) || stemsTable.headers.includes(nextAttributeName)) {
+      setError(`Атрибут "${nextAttributeName}" уже существует или зарезервирован.`);
+      return;
+    }
+
+    setStemsTable((prev) => addStemAttribute(prev, nextAttributeName));
+    setNewAttributeName('');
+  };
+
+  const handleRenameStemAttributeByHeader = (previousName: string) => {
+    if (!stemsTable || STEM_BASE_COLUMNS.includes(previousName)) {
+      return;
+    }
+
+    const rawNextName = window.prompt('Новое имя атрибута', previousName);
+    if (rawNextName === null) {
+      return;
+    }
+
+    const nextName = rawNextName.trim();
+    setError('');
+
+    if (!nextName) {
+      setError('Введите новое имя атрибута.');
+      return;
+    }
+
+    if (STEM_BASE_COLUMNS.includes(nextName)) {
+      setError(`Имя "${nextName}" зарезервировано.`);
+      return;
+    }
+
+    if (nextName !== previousName && stemsTable.headers.includes(nextName)) {
+      setError(`Атрибут "${nextName}" уже существует.`);
+      return;
+    }
+
+    setStemsTable((prev) => renameStemAttribute(prev, previousName, nextName));
+    setEdgesTable((prev) => replaceEdgeAttributeName(prev, previousName, nextName));
+    setLayerColors((prevColors) => {
+      if (!(previousName in prevColors) || previousName === nextName) {
+        return prevColors;
+      }
+
+      const { [previousName]: previousColor, ...restColors } = prevColors;
+      return {
+        ...restColors,
+        [nextName]: previousColor,
+      };
+    });
+  };
+
+  const handleDeleteStemAttributeByHeader = (attributeName: string) => {
+    if (STEM_BASE_COLUMNS.includes(attributeName)) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Удалить атрибут "${attributeName}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setError('');
+    setStemsTable((prev) => removeStemAttribute(prev, attributeName));
+    setEdgesTable((prev) => clearEdgeAttributeName(prev, attributeName));
+    setLayerColors((prevColors) => {
+      if (!(attributeName in prevColors)) {
+        return prevColors;
+      }
+
+      const { [attributeName]: _, ...restColors } = prevColors;
+      return restColors;
+    });
+  };
+
+  const handleAddStemRow = () => {
+    if (!canAddStemRow) {
+      setError(
+        'Перед добавлением новой записи заполните все обязательные поля. Для атрибутов нужно заполнить хотя бы одно поле в каждой строке.'
+      );
+      return;
+    }
+
+    setError('');
+    setStemsTable((prevTable) => {
+      if (!prevTable) {
+        return {
+          headers: [...STEM_BASE_COLUMNS],
+          rows: [
+            {
+              stem_id: '',
+              label: '',
+              lat: '',
+              lon: '',
+            },
+          ],
+        };
+      }
+
+      return appendEmptyRow(prevTable);
+    });
+  };
+
+  const handleDeleteStemRow = (rowIndex: number) => {
+    setStemsTable((prev) => removeRow(prev, rowIndex));
+  };
+
+  const handleAddEdgeRow = () => {
+    if (!hasAttributeWithAtLeastTwoStems) {
+      setError(
+        'Добавление связи доступно только если минимум у двух стволов заполнено значение хотя бы одного атрибута.'
+      );
+      return;
+    }
+
+    if (!canAddEdgeRow) {
+      setError('Перед добавлением новой связи заполните все поля в текущих строках.');
+      return;
+    }
+
+    setError('');
+    setEdgesTable((prevTable) => {
+      const selectedAttribute = stemAttributeHeaders[0] ?? '';
+      const availableStemIds = stemRows
+        .filter((stemRow) => {
+          const stemId = (stemRow.stem_id ?? '').trim();
+          if (!stemId) {
+            return false;
+          }
+
+          if (!selectedAttribute) {
+            return true;
+          }
+
+          const attributeValue = stemRow[selectedAttribute];
+          return typeof attributeValue === 'string' && attributeValue.trim() !== '';
+        })
+        .map((stemRow) => stemRow.stem_id)
+        .filter((stemId): stemId is string => typeof stemId === 'string' && !!stemId);
+
+      const sourceStemId = availableStemIds[0] ?? '';
+      const targetStemId = availableStemIds.find((stemId) => stemId !== sourceStemId) ?? '';
+      const nextRow: CsvRow = {
+        edge_id: '',
+        attribute_name: selectedAttribute,
+        source_stem_id: sourceStemId,
+        target_stem_id: targetStemId,
+        directed: 'false',
+        weight: '',
+      };
+
+      if (!prevTable) {
+        return {
+          headers: ['edge_id', 'attribute_name', 'source_stem_id', 'target_stem_id', 'directed', 'weight'],
+          rows: [nextRow],
+        };
+      }
+
+      return {
+        ...prevTable,
+        rows: [
+          ...prevTable.rows,
+          nextRow,
+        ],
+      };
+    });
+    setActiveTab('edges');
+  };
+
+  const handleDeleteEdgeRow = (rowIndex: number) => {
+    setEdgesTable((prev) => removeRow(prev, rowIndex));
   };
 
   return (
@@ -764,17 +1201,64 @@ export function StemMapCsvPage() {
 
         <Box sx={{ mt: 2 }}>
           {activeTab === 'stems' ? (
-            <EditableCsvTable
-              title="Таблица стволов"
-              table={stemsTable}
-              onChange={(rowIndex, header, value) => {
-                setStemsTable((prev) => updateCellValue(prev, rowIndex, header, value));
-              }}
-            />
+            <Box>
+              <EditableCsvTable
+                title="Таблица стволов"
+                table={stemsTable}
+                titleControls={
+                  stemsTable ? (
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      <TextField
+                        size="small"
+                        label="Новый атрибут"
+                        value={newAttributeName}
+                        onChange={(event) => setNewAttributeName(event.target.value)}
+                        sx={{
+                          minWidth: 220,
+                          '& .MuiInputBase-input': {
+                            fontSize: 12,
+                            py: 0.9,
+                          },
+                          '& .MuiInputLabel-root': {
+                            fontSize: 12,
+                          },
+                        }}
+                      />
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={handleAddStemAttribute}
+                        sx={{ fontSize: 12, py: 0.7 }}
+                      >
+                        Добавить атрибут
+                      </Button>
+                    </Stack>
+                  ) : undefined
+                }
+                onAddRow={handleAddStemRow}
+                onDeleteRow={handleDeleteStemRow}
+                isHeaderEditable={(header) => !STEM_BASE_COLUMNS.includes(header)}
+                onHeaderClick={handleRenameStemAttributeByHeader}
+                onHeaderDelete={handleDeleteStemAttributeByHeader}
+                canAddRow={canAddStemRow}
+                addRowDisabledReason="Заполните обязательные поля во всех строках. Для атрибутов достаточно одного заполненного поля в строке."
+                onChange={(rowIndex, header, value) => {
+                  setStemsTable((prev) => updateCellValue(prev, rowIndex, header, value));
+                }}
+              />
+            </Box>
           ) : activeTab === 'edges' ? (
             <EditableCsvTable
               title="Таблица связей"
               table={edgesTable}
+              onAddRow={handleAddEdgeRow}
+              onDeleteRow={handleDeleteEdgeRow}
+              canAddRow={canAddEdgeRow && hasAttributeWithAtLeastTwoStems}
+              addRowDisabledReason={
+                !hasAttributeWithAtLeastTwoStems
+                  ? 'Нужно минимум два ствола с заполненным значением одного атрибута.'
+                  : 'Заполните все поля во всех строках перед добавлением новой связи.'
+              }
               checkboxHeaders={['directed']}
               getSelectOptionsByCell={(_, header, row) => {
                 if (header === 'attribute_name') {
@@ -865,42 +1349,46 @@ export function StemMapCsvPage() {
             />
           ) : (
             <Box>
-              <Typography variant="h6" sx={{ mb: 2 }}>
-                Таблица слоёв
-              </Typography>
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ fontSize: 12, py: 1 }}>layer_id</TableCell>
-                      <TableCell sx={{ fontSize: 12, py: 1 }}>attribute_name</TableCell>
-                      <TableCell sx={{ fontSize: 12, py: 1 }}>color</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {generatedLayers.map((layer) => (
-                      <TableRow key={layer.layer_id}>
-                        <TableCell sx={{ fontSize: 12, py: 0.5 }}>{layer.layer_id}</TableCell>
-                        <TableCell sx={{ fontSize: 12, py: 0.5 }}>{layer.attribute_name}</TableCell>
-                        <TableCell sx={{ py: 0.5 }}>
-                          <TextField
-                            type="color"
-                            size="small"
-                            value={layerColors[layer.layer_id] ?? DEFAULT_LAYER_COLOR}
-                            onChange={(event) =>
-                              setLayerColors((prevColors) => ({
-                                ...prevColors,
-                                [layer.layer_id]: normalizeHexColor(event.target.value),
-                              }))
-                            }
-                            sx={{ width: 72 }}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              {!!generatedLayers.length && (
+                <>
+                  <Typography variant="h6" sx={{ mb: 2 }}>
+                    Таблица слоёв
+                  </Typography>
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontSize: 12, py: 1 }}>layer_id</TableCell>
+                          <TableCell sx={{ fontSize: 12, py: 1 }}>attribute_name</TableCell>
+                          <TableCell sx={{ fontSize: 12, py: 1 }}>color</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {generatedLayers.map((layer) => (
+                          <TableRow key={layer.layer_id}>
+                            <TableCell sx={{ fontSize: 12, py: 0.5 }}>{layer.layer_id}</TableCell>
+                            <TableCell sx={{ fontSize: 12, py: 0.5 }}>{layer.attribute_name}</TableCell>
+                            <TableCell sx={{ py: 0.5 }}>
+                              <TextField
+                                type="color"
+                                size="small"
+                                value={layerColors[layer.layer_id] ?? DEFAULT_LAYER_COLOR}
+                                onChange={(event) =>
+                                  setLayerColors((prevColors) => ({
+                                    ...prevColors,
+                                    [layer.layer_id]: normalizeHexColor(event.target.value),
+                                  }))
+                                }
+                                sx={{ width: 72 }}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </>
+              )}
               {!generatedLayers.length && (
                 <Typography variant="body2" color="text.secondary">
                   Сначала загрузите таблицу стволов, чтобы сгенерировать слои.
@@ -910,14 +1398,29 @@ export function StemMapCsvPage() {
           )}
 
           {activeTab === 'stems' && !stemsTable && (
-            <Typography variant="body2" color="text.secondary">
-              Загрузите CSV стволов, чтобы увидеть и редактировать таблицу.
-            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="body2" color="text.secondary">
+                Загрузите CSV стволов или создайте первый ствол вручную.
+              </Typography>
+              <Button size="small" variant="outlined" onClick={handleAddStemRow}>
+                Добавить ствол
+              </Button>
+            </Stack>
           )}
           {activeTab === 'edges' && !edgesTable && (
-            <Typography variant="body2" color="text.secondary">
-              Загрузите CSV связей, чтобы увидеть и редактировать таблицу.
-            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="body2" color="text.secondary">
+                Загрузите CSV связей или создайте первую связь вручную.
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={handleAddEdgeRow}
+                disabled={!hasAttributeWithAtLeastTwoStems}
+              >
+                Добавить связь
+              </Button>
+            </Stack>
           )}
         </Box>
       </Paper>
