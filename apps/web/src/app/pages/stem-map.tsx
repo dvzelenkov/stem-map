@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   Paper,
+  Slider,
   Stack,
   TextField,
   Typography,
@@ -74,6 +75,7 @@ export function StemMapPage() {
   );
   const [minClusterSize, setMinClusterSize] = useState<number>(8);
   const [alpha, setAlpha] = useState<number>(12);
+  const [clusterHeightScale, setClusterHeightScale] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
   const [clusters, setClusters] = useState<ClusterPolygonFeatureCollection | null>(
@@ -91,22 +93,38 @@ export function StemMapPage() {
       pickable: true,
       stroked: true,
       filled: true,
-      extruded: false,
-      lineWidthMinPixels: 2,
+      extruded: true,
+      wireframe: true,
+      lineWidthMinPixels: 3,
       getPolygon: (feature) => feature.geometry.coordinates[0],
       getFillColor: (feature) => {
         const seed = feature.properties.clusterId + 1;
+        const pointCountOpacityBoost = Math.min(
+          70,
+          Math.floor(feature.properties.pointCount / 20)
+        );
         return [
           (seed * 97) % 255,
           (seed * 163) % 255,
           (seed * 53) % 255,
-          120,
+          150 + pointCountOpacityBoost,
         ];
       },
-      getLineColor: [25, 25, 25, 220],
-      getLineWidth: 2,
+      getLineColor: [10, 10, 10, 255],
+      getLineWidth: 3,
+      elevationScale: 12000 * clusterHeightScale,
+      getElevation: () => 1,
+      updateTriggers: {
+        getElevation: [clusterHeightScale],
+      },
+      material: {
+        ambient: 0.5,
+        diffuse: 0.7,
+        shininess: 32,
+        specularColor: [220, 220, 220],
+      },
     });
-  }, [clusters]);
+  }, [clusterHeightScale, clusters]);
 
   const handleBuildClusters = async () => {
     setErrorText('');
@@ -163,6 +181,20 @@ export function StemMapPage() {
           <Typography variant="subtitle2">
             Формирование кластеров (backend)
           </Typography>
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Высота кластеров: {clusterHeightScale.toFixed(1)}x
+            </Typography>
+            <Slider
+              value={clusterHeightScale}
+              min={0.2}
+              max={8}
+              step={0.1}
+              onChange={(_, value) => setClusterHeightScale(value as number)}
+              valueLabelDisplay="auto"
+              size="small"
+            />
+          </Box>
           <TextField
             label="Min cluster size"
             type="number"
