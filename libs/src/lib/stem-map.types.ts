@@ -1,5 +1,5 @@
 import { CSSProperties } from 'react';
-import { MapViewState } from '@deck.gl/core';
+import { LayersList, MapViewState } from '@deck.gl/core';
 
 export interface Layer {
   layer_id: string;
@@ -62,4 +62,5 @@ export interface StemMapProps {
   showLabels?: boolean;
   initialViewState?: Partial<MapViewState>;
   resolveLayerValue?: LayerValueResolver;
+  overlayLayers?: LayersList;
 }

@@ -2,7 +2,17 @@ import DeckGL from '@deck.gl/react';
 import { TextLayer } from '@deck.gl/layers';
 import { LayersList, ViewStateChangeParameters } from '@deck.gl/core';
 import { useEffect, useMemo, useState } from 'react';
-import { Box, FormControl, InputLabel, MenuItem, Paper, Select, SelectChangeEvent, Typography } from '@mui/material';
+import {
+  Box,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  SelectChangeEvent,
+  Slider,
+  Typography,
+} from '@mui/material';
 import MapLibre from 'react-map-gl/maplibre';
 
 import { StemColumn } from './classes/stem-column';
@@ -179,6 +189,7 @@ export function StemMap({
   showLabels = true,
   initialViewState,
   resolveLayerValue,
+  overlayLayers,
 }: StemMapProps) {
   validateStemMapInput(data);
 
@@ -189,6 +200,7 @@ export function StemMap({
   const [currentZoom, setCurrentZoom] = useState<number>(
     initialViewState?.zoom ?? DEFAULT_VIEW_STATE.zoom
   );
+  const [columnRadiusScale, setColumnRadiusScale] = useState<number>(1);
 
   useEffect(() => {
     if (!orderedLayers.length) {
@@ -331,8 +343,9 @@ export function StemMap({
     orderedLayers,
   ]);
 
-  const currentRadius = getRadiusByZoom(currentZoom);
-  const heightScaleByZoom = getHeightScaleByRadius(currentRadius);
+  const baseRadiusByZoom = getRadiusByZoom(currentZoom);
+  const currentRadius = Math.round(baseRadiusByZoom * clamp(columnRadiusScale, 0.1, 1));
+  const heightScaleByZoom = getHeightScaleByRadius(baseRadiusByZoom);
   const edgeAltitudeScaleByZoom = getEdgeAltitudeScaleByZoom(currentZoom);
 
   const visibleEdges = useMemo<VisibleEdge[]>(() => {
@@ -442,7 +455,7 @@ export function StemMap({
       updateTriggers: {
         getFillColor: [activeLayerId, selectedStemId],
         getElevation: [heightScaleByZoom, maxConnectedLayersCount],
-        radius: currentRadius,
+        radius: [currentRadius, columnRadiusScale],
       },
     }),
   ];
@@ -461,6 +474,11 @@ export function StemMap({
       })
     );
   }
+
+  const mapLayers = useMemo(
+    () => [...layers, ...(overlayLayers ?? [])],
+    [layers, overlayLayers]
+  );
 
   const activeLayer = getActiveLayer(orderedLayers, activeLayerId);
 
@@ -494,7 +512,7 @@ export function StemMap({
       <DeckGL
         initialViewState={{ ...DEFAULT_VIEW_STATE, ...initialViewState }}
         controller={true}
-        layers={layers}
+        layers={mapLayers}
         width={width}
         height={height}
         onViewStateChange={(params: ViewStateChangeParameters) => {
@@ -561,6 +579,19 @@ export function StemMap({
             ))}
           </Select>
         </FormControl>
+        <Typography variant="caption" color="text.secondary">
+          Радиус столбов: {columnRadiusScale.toFixed(1)}x
+        </Typography>
+        <Slider
+          value={columnRadiusScale}
+          min={0.1}
+          max={1}
+          step={0.1}
+          onChange={(_, value) => setColumnRadiusScale(value as number)}
+          valueLabelDisplay="auto"
+          size="small"
+          sx={{ mb: 0.5 }}
+        />
         <Typography variant="caption" color="text.secondary">
           Атрибут: {activeLayer?.attribute_name ?? '-'}
         </Typography>

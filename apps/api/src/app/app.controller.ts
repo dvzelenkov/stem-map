@@ -5,12 +5,15 @@ import { AppService } from './app.service';
 import 'multer';
 import { UserSettings } from '@study/shared';
 import { EarthquakeService } from './earthquake.service';
+import { GeospatialService } from '../geospatial/geospatial.service';
+import { ClusterPolygonsRequest } from '../geospatial/geospatial.types';
 
 @Controller()
 export class AppController {
   constructor(
     private readonly appService: AppService,
     private readonly earthquakeService: EarthquakeService,
+    private readonly geospatialService: GeospatialService,
   ) {}
 
   @Post('upload')
@@ -42,6 +45,14 @@ export class AppController {
     console.log(`Время обработки данных: ${duration}`);
 
     return 'ok';
+  }
+
+  @Post('trunk-map/clusters')
+  buildTrunkMapClusters(@Body() body: ClusterPolygonsRequest) {
+    return this.geospatialService.clusterAndBuildPolygons(
+      body?.points ?? [],
+      body?.options
+    );
   }
 
   // @Post('generate')

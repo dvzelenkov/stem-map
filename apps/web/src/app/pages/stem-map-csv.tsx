@@ -1,9 +1,11 @@
 import { ChangeEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Backdrop,
   Box,
   Button,
   Checkbox,
+  CircularProgress,
   IconButton,
   MenuItem,
   Paper,
@@ -14,6 +16,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Tabs,
   TextField,
@@ -586,6 +589,14 @@ function EditableCsvTable({
   isCellInvalid?: (rowIndex: number, header: string, value: string) => boolean;
   checkboxHeaders?: string[];
 }) {
+  const [page, setPage] = useState<number>(0);
+  const rowsPerPage = 50;
+  const totalRows = table?.rows.length ?? 0;
+  const maxPage = Math.max(0, Math.ceil(totalRows / rowsPerPage) - 1);
+  const safePage = Math.min(page, maxPage);
+  const pageStartIndex = safePage * rowsPerPage;
+  const pageRows = table?.rows.slice(pageStartIndex, pageStartIndex + rowsPerPage) ?? [];
+
   if (!table) {
     return null;
   }
@@ -594,6 +605,9 @@ function EditableCsvTable({
     <Box>
       <Typography variant="h6" sx={{ mb: 2 }}>
         {title}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+        Всего строк: {totalRows}
       </Typography>
       {titleControls && <Box sx={{ mb: 1.5 }}>{titleControls}</Box>}
       <TableContainer>
@@ -651,7 +665,9 @@ function EditableCsvTable({
             </TableRow>
           </TableHead>
           <TableBody>
-            {table.rows.map((row, rowIndex) => (
+            {pageRows.map((row, pageRowIndex) => {
+              const rowIndex = pageStartIndex + pageRowIndex;
+              return (
               <TableRow key={`${title}-${rowIndex}`}>
                 {table.headers.map((header) => {
                   const value = row[header] ?? '';
@@ -724,10 +740,18 @@ function EditableCsvTable({
                   </TableCell>
                 )}
               </TableRow>
-            ))}
+            )})}
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={totalRows}
+        page={safePage}
+        onPageChange={(_, nextPage) => setPage(nextPage)}
+        rowsPerPage={rowsPerPage}
+        rowsPerPageOptions={[50]}
+      />
       {onAddRow && (
         <Button
           size="small"
@@ -764,6 +788,8 @@ export function StemMapCsvPage() {
   );
   const [newAttributeName, setNewAttributeName] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const [isTabSwitching, setIsTabSwitching] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -855,6 +881,7 @@ export function StemMapCsvPage() {
       }
 
       try {
+        setIsImporting(true);
         const text = await file.text();
         setter(parseCsv(text));
         setActiveTab(tab);
@@ -862,14 +889,16 @@ export function StemMapCsvPage() {
         setError(
           uploadError instanceof Error ? uploadError.message : 'Не удалось разобрать CSV'
         );
+      } finally {
+        setIsImporting(false);
       }
     };
 
   const handleSaveAndOpenMap = () => {
     setError('');
 
-    if (!stemsTable || !edgesTable) {
-      setError('Сначала загрузите CSV-файлы стволов и связей.');
+    if (!stemsTable) {
+      setError('Сначала загрузите CSV-файл стволов.');
       return;
     }
 
@@ -878,7 +907,7 @@ export function StemMapCsvPage() {
       const layerIds = new Set(layers.map((layer) => layer.layer_id));
       const stems = mapStems(stemsTable.rows, stemsTable.headers);
       const stemIds = new Set(stems.map((stem) => stem.stem_id));
-      const edges = mapEdges(edgesTable.rows);
+      const edges = edgesTable ? mapEdges(edgesTable.rows) : [];
 
       for (const edge of edges) {
         if (!layerIds.has(edge.layer_id)) {
@@ -1178,7 +1207,7 @@ export function StemMapCsvPage() {
             <Button
               variant="contained"
               onClick={handleSaveAndOpenMap}
-              disabled={!stemsTable || !edgesTable}
+              disabled={!stemsTable}
             >
               Сохранить и открыть карту
             </Button>
@@ -1193,7 +1222,20 @@ export function StemMapCsvPage() {
       </Paper>
 
       <Paper sx={{ p: 2 }}>
-        <Tabs value={activeTab} onChange={(_, value: StemMapCsvTab) => setActiveTab(value)}>
+        <Tabs
+          value={activeTab}
+          onChange={(_, value: StemMapCsvTab) => {
+            if (value === activeTab) {
+              return;
+            }
+
+            setIsTabSwitching(true);
+            window.setTimeout(() => {
+              setActiveTab(value);
+              setIsTabSwitching(false);
+            }, 120);
+          }}
+        >
           <Tab value="stems" label="Стволы" />
           <Tab value="edges" label="Связи" />
           <Tab value="layers" label="Слои" />
@@ -1424,6 +1466,17 @@ export function StemMapCsvPage() {
           )}
         </Box>
       </Paper>
+      <Backdrop
+        open={isImporting || isTabSwitching}
+        sx={{ zIndex: (theme) => theme.zIndex.drawer + 10, color: '#fff' }}
+      >
+        <Stack spacing={1} alignItems="center">
+          <CircularProgress color="inherit" />
+          <Typography variant="body2">
+            {isImporting ? 'Импорт CSV...' : 'Переключение вкладки...'}
+          </Typography>
+        </Stack>
+      </Backdrop>
     </Box>
   );
 }

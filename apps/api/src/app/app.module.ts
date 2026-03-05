@@ -7,11 +7,13 @@ import { AppService } from './app.service';
 import config from './configuration/config';
 import { WebsocketGateway } from './websocket.getaway';
 import { EarthquakeService } from './earthquake.service';
+import { GeospatialModule } from '../geospatial/geospatial.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ load: [config] }),
     CoreModule,
+    GeospatialModule,
   ],
   controllers: [AppController],
   providers: [
