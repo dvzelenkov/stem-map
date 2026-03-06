@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Delaunay } from 'd3-delaunay';
 import { HDBSCAN } from 'hdbscan-ts';
+import { cellToLatLng, getHexagonEdgeLengthAvg, latLngToCell } from 'h3-js';
 import {
   booleanValid,
   convex,
@@ -10,6 +11,9 @@ import {
 } from '@turf/turf';
 
 import {
+  ClusterAttributeType,
+  ClusterFeatureAttribute,
+  ClusterMode,
   ClusterPolygonFeature,
   ClusterPolygonFeatureCollection,
   ClusterPolygonsOptions,
@@ -26,14 +30,27 @@ interface SpatialBucket {
   pointIndexes: number[];
   sumLat: number;
   sumLon: number;
+  vectorSums: number[];
+  vectorCount: number;
 }
 
 interface ReducedDatasetResult {
   pointsForClustering: GeoPoint[];
+  vectorsForClustering: number[][];
   effectiveMinClusterSize: number;
   reductionApplied: boolean;
   cellSizeKm: number;
   expandLabels: (labels: number[]) => number[];
+}
+
+interface FeaturePreparationResult {
+  vectors: number[][];
+  usedFeatureAttributes: ClusterFeatureAttribute[];
+}
+
+interface H3Bucket {
+  pointIndexes: number[];
+  vectorSums: number[];
 }
 
 const EARTH_RADIUS_METERS = 6_371_000;
@@ -47,8 +64,14 @@ const LARGE_DATASET_THRESHOLD = 8_000;
 const MIN_REDUCTION_RATIO_TO_APPLY = 0.92;
 const MAX_ALPHA_SHAPE_POINTS = 5_000;
 const PROGRESS_LOG_EVERY_CLUSTERS = 25;
-const MAX_HDBSCAN_POINTS = 6_000;
+const MAX_HDBSCAN_POINTS_QUALITY = 6_000;
+const MAX_HDBSCAN_POINTS_SCALABLE = 2_200;
 const TARGET_REDUCED_POINTS = 4_500;
+const GRID_FAST_ATTRIBUTE_CELL_WIDTH = 0.8;
+const GRID_FAST_MAX_ATTRIBUTE_DIMS = 3;
+const DEFAULT_H3_RESOLUTION = 6;
+const MIN_H3_RESOLUTION = 2;
+const MAX_H3_RESOLUTION = 10;
 
 @Injectable()
 export class GeospatialService {
@@ -66,42 +89,58 @@ export class GeospatialService {
 
     const minClusterSize = this.normalizeMinClusterSize(options.minClusterSize);
     const alphaKm = this.normalizeAlpha(options.alpha);
+    const spatialWeight = this.normalizeWeight(options.spatialWeight, 1);
+    const mode = this.normalizeMode(options.mode);
+    const h3Resolution = this.normalizeH3Resolution(options.h3Resolution);
 
     this.logger.log(
-      `Cluster pipeline start: points=${normalizedPoints.length}, minClusterSize=${minClusterSize}, alphaKm=${alphaKm}`
+      `Cluster pipeline start: points=${normalizedPoints.length}, minClusterSize=${minClusterSize}, alphaKm=${alphaKm}, spatialWeight=${spatialWeight}, mode=${mode}, h3Resolution=${h3Resolution}`
+    );
+
+    const featurePrepStartMs = performance.now();
+    const featurePrep = this.prepareFeatureVectors(
+      normalizedPoints,
+      options.featureAttributes ?? [],
+      spatialWeight
+    );
+    this.logger.log(
+      `Feature prep finished: dimensions=${featurePrep.vectors[0]?.length ?? 0}, attributeFeatures=${featurePrep.usedFeatureAttributes.length}, stageMs=${Math.round(performance.now() - featurePrepStartMs)}`
     );
 
     const reductionStartMs = performance.now();
-    const reducedDataset = this.reducePointsForLargeDatasets(
+    const { dataset: reducedDataset, strategy } = this.selectDatasetForClustering(
       normalizedPoints,
+      featurePrep.vectors,
       alphaKm,
-      minClusterSize
+      minClusterSize,
+      mode,
+      h3Resolution
     );
     this.logger.log(
-      `Dataset prepared: source=${normalizedPoints.length}, clustered=${reducedDataset.pointsForClustering.length}, reductionApplied=${reducedDataset.reductionApplied}, cellSizeKm=${reducedDataset.cellSizeKm.toFixed(2)}, effectiveMinClusterSize=${reducedDataset.effectiveMinClusterSize}, stageMs=${Math.round(performance.now() - reductionStartMs)}`
+      `Dataset prepared: source=${normalizedPoints.length}, clustered=${reducedDataset.pointsForClustering.length}, strategy=${strategy}, reductionApplied=${reducedDataset.reductionApplied}, cellSizeKm=${reducedDataset.cellSizeKm.toFixed(2)}, effectiveMinClusterSize=${reducedDataset.effectiveMinClusterSize}, stageMs=${Math.round(performance.now() - reductionStartMs)}`
     );
 
     const hdbscanStartMs = performance.now();
     let reducedLabels: number[];
+    const maxHdbscanPoints =
+      mode === 'quality' ? MAX_HDBSCAN_POINTS_QUALITY : MAX_HDBSCAN_POINTS_SCALABLE;
 
-    if (reducedDataset.pointsForClustering.length <= MAX_HDBSCAN_POINTS) {
+    if (reducedDataset.pointsForClustering.length <= maxHdbscanPoints) {
       this.logger.log(
-        `Clustering algorithm: HDBSCAN, points=${reducedDataset.pointsForClustering.length}`
-      );
-      const data3d = reducedDataset.pointsForClustering.map((item) =>
-        this.latLonRadiansToUnitSphere(item.lat, item.lon)
+        `Clustering algorithm: HDBSCAN, points=${reducedDataset.pointsForClustering.length}, threshold=${maxHdbscanPoints}`
       );
       const hdbscan = new HDBSCAN({
         minClusterSize: reducedDataset.effectiveMinClusterSize,
         minSamples: reducedDataset.effectiveMinClusterSize,
       });
-      reducedLabels = hdbscan.fit(data3d);
+      reducedLabels = hdbscan.fit(reducedDataset.vectorsForClustering);
     } else {
       this.logger.warn(
-        `Clustering fallback: GRID_FAST, points=${reducedDataset.pointsForClustering.length}, reason=too_many_points_for_hdbscan`
+        `Clustering fallback: GRID_FAST, points=${reducedDataset.pointsForClustering.length}, threshold=${maxHdbscanPoints}, reason=too_many_points_for_hdbscan`
       );
       reducedLabels = this.fastGridCluster(
         reducedDataset.pointsForClustering,
+        reducedDataset.vectorsForClustering,
         reducedDataset.effectiveMinClusterSize,
         reducedDataset.cellSizeKm
       );
@@ -197,15 +236,235 @@ export class GeospatialService {
     return Math.max(MIN_ALPHA_KM, Math.min(MAX_ALPHA_KM, value));
   }
 
-  private latLonRadiansToUnitSphere(lat: number, lon: number): number[] {
-    const latRad = this.toRadians(lat);
-    const lonRad = this.toRadians(lon);
-    const cosLat = Math.cos(latRad);
-    return [
-      cosLat * Math.cos(lonRad),
-      cosLat * Math.sin(lonRad),
-      Math.sin(latRad),
+  private normalizeWeight(value: number | undefined, fallback: number): number {
+    if (!value || !Number.isFinite(value)) {
+      return fallback;
+    }
+    return Math.max(0.05, Math.min(20, value));
+  }
+
+  private normalizeMode(value: ClusterMode | undefined): ClusterMode {
+    if (value === 'quality' || value === 'scalable' || value === 'auto') {
+      return value;
+    }
+    return 'auto';
+  }
+
+  private normalizeH3Resolution(value: number | undefined): number {
+    if (!value || !Number.isFinite(value)) {
+      return DEFAULT_H3_RESOLUTION;
+    }
+    return Math.max(MIN_H3_RESOLUTION, Math.min(MAX_H3_RESOLUTION, Math.floor(value)));
+  }
+
+  private selectDatasetForClustering(
+    points: GeoPoint[],
+    vectors: number[][],
+    alphaKm: number,
+    minClusterSize: number,
+    mode: ClusterMode,
+    h3Resolution: number
+  ): { dataset: ReducedDatasetResult; strategy: string } {
+    const shouldUseH3 =
+      mode === 'scalable' ||
+      (mode === 'auto' && points.length >= LARGE_DATASET_THRESHOLD);
+
+    if (shouldUseH3) {
+      return {
+        dataset: this.aggregateByH3(points, vectors, minClusterSize, h3Resolution),
+        strategy: `h3(res=${h3Resolution})`,
+      };
+    }
+
+    return {
+      dataset: this.reducePointsForLargeDatasets(points, vectors, alphaKm, minClusterSize),
+      strategy: 'grid-reduction',
+    };
+  }
+
+  private aggregateByH3(
+    points: GeoPoint[],
+    vectors: number[][],
+    minClusterSize: number,
+    resolution: number
+  ): ReducedDatasetResult {
+    const bucketsByCell = new Map<string, H3Bucket>();
+    points.forEach((pointItem, index) => {
+      const cell = latLngToCell(pointItem.lat, pointItem.lon, resolution);
+      const vector = vectors[index];
+      const existing = bucketsByCell.get(cell);
+      if (existing) {
+        existing.pointIndexes.push(index);
+        for (let vectorIndex = 0; vectorIndex < vector.length; vectorIndex += 1) {
+          existing.vectorSums[vectorIndex] += vector[vectorIndex];
+        }
+      } else {
+        bucketsByCell.set(cell, {
+          pointIndexes: [index],
+          vectorSums: [...vector],
+        });
+      }
+    });
+
+    const h3Cells = [...bucketsByCell.keys()];
+    const reducedPoints = h3Cells.map((cell) => {
+      const [lat, lon] = cellToLatLng(cell);
+      return { lat, lon };
+    });
+    const reducedVectors = h3Cells.map((cell) => {
+      const bucket = bucketsByCell.get(cell);
+      if (!bucket) {
+        return [];
+      }
+      return bucket.vectorSums.map((sum) => sum / Math.max(1, bucket.pointIndexes.length));
+    });
+    const h3EdgeKm = getHexagonEdgeLengthAvg(resolution, 'km');
+    const fallbackCellSizeKm = Math.max(0.5, h3EdgeKm * 2.2);
+
+    const effectiveMinClusterSize = Math.max(2, Math.floor(minClusterSize * 0.6));
+
+    return {
+      pointsForClustering: reducedPoints,
+      vectorsForClustering: reducedVectors,
+      effectiveMinClusterSize,
+      reductionApplied: true,
+      cellSizeKm: fallbackCellSizeKm,
+      expandLabels: (labels: number[]) => {
+        const expanded = new Array<number>(points.length).fill(-1);
+        h3Cells.forEach((cell, bucketIndex) => {
+          const label = labels[bucketIndex] ?? -1;
+          const bucket = bucketsByCell.get(cell);
+          bucket?.pointIndexes.forEach((originalIndex) => {
+            expanded[originalIndex] = label;
+          });
+        });
+        return expanded;
+      },
+    };
+  }
+
+  private prepareFeatureVectors(
+    points: GeoPoint[],
+    requestedAttributes: ClusterFeatureAttribute[],
+    spatialWeight: number
+  ): FeaturePreparationResult {
+    const preparedSpatial = points.map((pointItem) => this.toWebMercator(pointItem));
+    const columns: number[][] = [
+      preparedSpatial.map((item) => item.x),
+      preparedSpatial.map((item) => item.y),
     ];
+    const columnWeights = [spatialWeight, spatialWeight];
+    const usedFeatureAttributes: ClusterFeatureAttribute[] = [];
+
+    for (const attributeConfig of requestedAttributes) {
+      const key = attributeConfig.key?.trim();
+      if (!key) {
+        continue;
+      }
+
+      const attributeType: ClusterAttributeType =
+        attributeConfig.type === 'time' ? 'time' : 'numeric';
+      const parsedColumn = points.map((pointItem) =>
+        this.parseAttributeValue(pointItem.attributes?.[key], attributeType)
+      );
+      const validValuesCount = parsedColumn.filter((value) => Number.isFinite(value)).length;
+      if (validValuesCount < 3) {
+        continue;
+      }
+
+      columns.push(parsedColumn);
+      columnWeights.push(this.normalizeWeight(attributeConfig.weight, 1));
+      usedFeatureAttributes.push({
+        key,
+        type: attributeType,
+        weight: this.normalizeWeight(attributeConfig.weight, 1),
+      });
+    }
+
+    const normalizedColumns = columns.map((column) => this.robustScaleColumn(column));
+    const vectors = points.map((_, pointIndex) =>
+      normalizedColumns.map((column, columnIndex) => column[pointIndex] * columnWeights[columnIndex])
+    );
+
+    return {
+      vectors,
+      usedFeatureAttributes,
+    };
+  }
+
+  private robustScaleColumn(column: number[]): number[] {
+    const finiteValues = column.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+    if (finiteValues.length < 2) {
+      return column.map(() => 0);
+    }
+
+    const median = this.quantile(finiteValues, 0.5);
+    const q1 = this.quantile(finiteValues, 0.25);
+    const q3 = this.quantile(finiteValues, 0.75);
+    const iqr = Math.max(1e-9, q3 - q1);
+
+    return column.map((value) =>
+      Number.isFinite(value) ? (value - median) / iqr : 0
+    );
+  }
+
+  private quantile(sortedValues: number[], q: number): number {
+    if (!sortedValues.length) {
+      return 0;
+    }
+    const position = (sortedValues.length - 1) * q;
+    const baseIndex = Math.floor(position);
+    const rest = position - baseIndex;
+    const baseValue = sortedValues[baseIndex];
+    const nextValue = sortedValues[Math.min(sortedValues.length - 1, baseIndex + 1)];
+    return baseValue + rest * (nextValue - baseValue);
+  }
+
+  private parseAttributeValue(
+    rawValue: unknown,
+    attributeType: ClusterAttributeType
+  ): number {
+    if (rawValue === null || rawValue === undefined) {
+      return Number.NaN;
+    }
+
+    if (attributeType === 'time') {
+      if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+        return rawValue;
+      }
+      if (rawValue instanceof Date) {
+        return rawValue.getTime();
+      }
+
+      const textValue = String(rawValue).trim();
+      const nativeParse = Date.parse(textValue);
+      if (Number.isFinite(nativeParse)) {
+        return nativeParse;
+      }
+
+      const dotDateMatch = textValue.match(
+        /^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/
+      );
+      if (dotDateMatch) {
+        const [, dd, mm, yyyy, hh = '0', min = '0'] = dotDateMatch;
+        const utcDate = Date.UTC(
+          Number(yyyy),
+          Number(mm) - 1,
+          Number(dd),
+          Number(hh),
+          Number(min)
+        );
+        return Number.isFinite(utcDate) ? utcDate : Number.NaN;
+      }
+
+      return Number.NaN;
+    }
+
+    const normalized = typeof rawValue === 'string'
+      ? rawValue.trim().replace(',', '.')
+      : rawValue;
+    const value = Number(normalized);
+    return Number.isFinite(value) ? value : Number.NaN;
   }
 
   private buildClusterPolygon(
@@ -485,12 +744,14 @@ export class GeospatialService {
 
   private reducePointsForLargeDatasets(
     points: GeoPoint[],
+    vectors: number[][],
     alphaKm: number,
     minClusterSize: number
   ): ReducedDatasetResult {
     if (points.length < LARGE_DATASET_THRESHOLD) {
       return {
         pointsForClustering: points,
+        vectorsForClustering: vectors,
         effectiveMinClusterSize: minClusterSize,
         reductionApplied: false,
         cellSizeKm: 0,
@@ -509,12 +770,17 @@ export class GeospatialService {
       const xBucket = Math.floor(x / cellSizeMeters);
       const yBucket = Math.floor(y / cellSizeMeters);
       const key = `${xBucket}:${yBucket}`;
+      const pointVector = vectors[index];
 
       const existing = bucketsByKey.get(key);
       if (existing) {
         existing.pointIndexes.push(index);
         existing.sumLat += pointItem.lat;
         existing.sumLon += pointItem.lon;
+        for (let vectorIndex = 0; vectorIndex < pointVector.length; vectorIndex += 1) {
+          existing.vectorSums[vectorIndex] += pointVector[vectorIndex];
+        }
+        existing.vectorCount += 1;
         return;
       }
 
@@ -522,6 +788,8 @@ export class GeospatialService {
         pointIndexes: [index],
         sumLat: pointItem.lat,
         sumLon: pointItem.lon,
+        vectorSums: [...pointVector],
+        vectorCount: 1,
       });
     });
 
@@ -530,11 +798,15 @@ export class GeospatialService {
       lat: bucket.sumLat / bucket.pointIndexes.length,
       lon: bucket.sumLon / bucket.pointIndexes.length,
     }));
+    const reducedVectors = buckets.map((bucket) =>
+      bucket.vectorSums.map((value) => value / Math.max(1, bucket.vectorCount))
+    );
 
     const reductionRatio = reducedPoints.length / points.length;
     if (reductionRatio >= MIN_REDUCTION_RATIO_TO_APPLY) {
       return {
         pointsForClustering: points,
+        vectorsForClustering: vectors,
         effectiveMinClusterSize: minClusterSize,
         reductionApplied: false,
         cellSizeKm,
@@ -549,6 +821,7 @@ export class GeospatialService {
 
     return {
       pointsForClustering: reducedPoints,
+      vectorsForClustering: reducedVectors,
       effectiveMinClusterSize,
       reductionApplied: true,
       cellSizeKm,
@@ -567,20 +840,35 @@ export class GeospatialService {
 
   private fastGridCluster(
     points: GeoPoint[],
+    vectors: number[][],
     minClusterSize: number,
     baseCellSizeKm: number
   ): number[] {
     const minSize = Math.max(2, minClusterSize);
     const cellSizeMeters = Math.max(500, baseCellSizeKm * 1000);
     const pointsByCell = new Map<string, number[]>();
-    const cellByIndex: Array<{ x: number; y: number }> = new Array(points.length);
+    const cellCoordsByKey = new Map<string, number[]>();
+    const attributeDimensionsToUse = Math.min(
+      GRID_FAST_MAX_ATTRIBUTE_DIMS,
+      Math.max(0, (vectors[0]?.length ?? 2) - 2)
+    );
+
+    this.logger.log(
+      `GRID_FAST config: spatialCellKm=${(cellSizeMeters / 1000).toFixed(2)}, attributeDims=${attributeDimensionsToUse}`
+    );
 
     points.forEach((pointItem, index) => {
       const { x, y } = this.toWebMercator(pointItem);
       const cellX = Math.floor(x / cellSizeMeters);
       const cellY = Math.floor(y / cellSizeMeters);
-      cellByIndex[index] = { x: cellX, y: cellY };
-      const key = `${cellX}:${cellY}`;
+      const coords: number[] = [cellX, cellY];
+      for (let dim = 0; dim < attributeDimensionsToUse; dim += 1) {
+        const value = vectors[index][2 + dim] ?? 0;
+        coords.push(Math.floor(value / GRID_FAST_ATTRIBUTE_CELL_WIDTH));
+      }
+
+      const key = this.gridCellKey(coords);
+      cellCoordsByKey.set(key, coords);
       const existing = pointsByCell.get(key);
       if (existing) {
         existing.push(index);
@@ -613,19 +901,17 @@ export class GeospatialService {
           componentPointIndexes.push(...currentIndexes);
         }
 
-        const [xRaw, yRaw] = currentKey.split(':');
-        const x = Number(xRaw);
-        const y = Number(yRaw);
+        const currentCoords = cellCoordsByKey.get(currentKey);
+        if (!currentCoords) {
+          continue;
+        }
 
-        for (let dx = -1; dx <= 1; dx += 1) {
-          for (let dy = -1; dy <= 1; dy += 1) {
-            const neighborKey = `${x + dx}:${y + dy}`;
-            if (!pointsByCell.has(neighborKey) || visitedCells.has(neighborKey)) {
-              continue;
-            }
-            visitedCells.add(neighborKey);
-            queue.push(neighborKey);
+        for (const neighborKey of this.expandGridNeighborKeys(currentCoords)) {
+          if (!pointsByCell.has(neighborKey) || visitedCells.has(neighborKey)) {
+            continue;
           }
+          visitedCells.add(neighborKey);
+          queue.push(neighborKey);
         }
       }
 
@@ -640,6 +926,30 @@ export class GeospatialService {
     }
 
     return labels;
+  }
+
+  private gridCellKey(coords: number[]): string {
+    return coords.join(':');
+  }
+
+  private expandGridNeighborKeys(coords: number[]): string[] {
+    const result: string[] = [];
+    const current = new Array<number>(coords.length).fill(0);
+
+    const walk = (dimension: number) => {
+      if (dimension === coords.length) {
+        result.push(this.gridCellKey(current));
+        return;
+      }
+
+      for (let delta = -1; delta <= 1; delta += 1) {
+        current[dimension] = coords[dimension] + delta;
+        walk(dimension + 1);
+      }
+    };
+
+    walk(0);
+    return result;
   }
 
   private toWebMercator(pointItem: GeoPoint): { x: number; y: number } {

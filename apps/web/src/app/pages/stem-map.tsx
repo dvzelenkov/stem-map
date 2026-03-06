@@ -4,7 +4,12 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
+  FormControl,
+  FormControlLabel,
+  MenuItem,
   Paper,
+  Select,
   Slider,
   Stack,
   TextField,
@@ -32,6 +37,15 @@ interface ClusterPolygonFeature {
 interface ClusterPolygonFeatureCollection {
   type: 'FeatureCollection';
   features: ClusterPolygonFeature[];
+}
+
+type ClusterAttributeType = 'numeric' | 'time';
+type ClusterMode = 'auto' | 'quality' | 'scalable';
+
+interface ClusterFeatureAttributeOption {
+  key: string;
+  type: ClusterAttributeType;
+  weight: number;
 }
 
 const EMPTY_STEM_MAP_DATA: StemMapInputData = {
@@ -75,7 +89,13 @@ export function StemMapPage() {
   );
   const [minClusterSize, setMinClusterSize] = useState<number>(8);
   const [alpha, setAlpha] = useState<number>(12);
+  const [spatialWeight, setSpatialWeight] = useState<number>(1);
+  const [clusterMode, setClusterMode] = useState<ClusterMode>('auto');
+  const [h3Resolution, setH3Resolution] = useState<number>(6);
   const [clusterHeightScale, setClusterHeightScale] = useState<number>(1);
+  const [selectedAttributes, setSelectedAttributes] = useState<
+    ClusterFeatureAttributeOption[]
+  >([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
   const [clusters, setClusters] = useState<ClusterPolygonFeatureCollection | null>(
@@ -126,6 +146,52 @@ export function StemMapPage() {
     });
   }, [clusterHeightScale, clusters]);
 
+  const availableAttributeKeys = useMemo(() => {
+    const keysFromLayers = currentData.layers
+      .map((layer) => layer.attribute_name)
+      .filter((value): value is string => typeof value === 'string' && !!value);
+    return [...new Set(keysFromLayers)];
+  }, [currentData.layers]);
+
+  const selectedAttributeByKey = useMemo(
+    () =>
+      new Map(
+        selectedAttributes.map((attributeConfig) => [
+          attributeConfig.key,
+          attributeConfig,
+        ])
+      ),
+    [selectedAttributes]
+  );
+
+  const toggleAttribute = (key: string, checked: boolean) => {
+    setSelectedAttributes((previous) => {
+      if (checked) {
+        if (previous.some((item) => item.key === key)) {
+          return previous;
+        }
+        return [...previous, { key, type: 'numeric', weight: 1 }];
+      }
+      return previous.filter((item) => item.key !== key);
+    });
+  };
+
+  const updateSelectedAttribute = (
+    key: string,
+    patch: Partial<ClusterFeatureAttributeOption>
+  ) => {
+    setSelectedAttributes((previous) =>
+      previous.map((item) =>
+        item.key === key
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item
+      )
+    );
+  };
+
   const handleBuildClusters = async () => {
     setErrorText('');
     setIsLoading(true);
@@ -135,10 +201,15 @@ export function StemMapPage() {
           id: stem.stem_id,
           lat: stem.geo.lat,
           lon: stem.geo.lon,
+          attributes: stem.properties ?? {},
         })),
         options: {
           minClusterSize,
           alpha,
+          spatialWeight,
+          mode: clusterMode,
+          h3Resolution,
+          featureAttributes: selectedAttributes,
         },
       };
 
@@ -209,6 +280,119 @@ export function StemMapPage() {
             value={alpha}
             onChange={(event) => setAlpha(Math.max(0.1, Number(event.target.value)))}
           />
+          <FormControl size="small" fullWidth>
+            <Select
+              value={clusterMode}
+              onChange={(event) => setClusterMode(event.target.value as ClusterMode)}
+            >
+              <MenuItem value="auto">auto (recommended)</MenuItem>
+              <MenuItem value="quality">quality (HDBSCAN points)</MenuItem>
+              <MenuItem value="scalable">scalable (H3 + HDBSCAN)</MenuItem>
+            </Select>
+          </FormControl>
+          {clusterMode !== 'quality' ? (
+            <TextField
+              label="H3 resolution (2-10)"
+              type="number"
+              size="small"
+              value={h3Resolution}
+              onChange={(event) =>
+                setH3Resolution(
+                  Math.max(2, Math.min(10, Math.floor(Number(event.target.value) || 6)))
+                )
+              }
+            />
+          ) : null}
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Вес пространственной близости: {spatialWeight.toFixed(1)}
+            </Typography>
+            <Slider
+              value={spatialWeight}
+              min={0.2}
+              max={5}
+              step={0.1}
+              onChange={(_, value) => setSpatialWeight(value as number)}
+              valueLabelDisplay="auto"
+              size="small"
+            />
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Атрибуты для кластеризации
+            </Typography>
+            <Stack spacing={0.8} sx={{ maxHeight: 180, overflowY: 'auto', mt: 0.5 }}>
+              {availableAttributeKeys.length === 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  Атрибутные колонки не найдены
+                </Typography>
+              ) : (
+                availableAttributeKeys.map((attributeKey) => {
+                  const selectedOption = selectedAttributeByKey.get(attributeKey);
+                  const isChecked = Boolean(selectedOption);
+
+                  return (
+                    <Box
+                      key={attributeKey}
+                      sx={{
+                        border: '1px solid #ddd',
+                        borderRadius: 1,
+                        p: 0.6,
+                        background: isChecked ? '#f8fbff' : '#fff',
+                      }}
+                    >
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={isChecked}
+                            onChange={(event) =>
+                              toggleAttribute(attributeKey, event.target.checked)
+                            }
+                          />
+                        }
+                        label={
+                          <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                            {attributeKey}
+                          </Typography>
+                        }
+                        sx={{ m: 0 }}
+                      />
+                      {isChecked && selectedOption ? (
+                        <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+                          <FormControl size="small" sx={{ minWidth: 110 }}>
+                            <Select
+                              value={selectedOption.type}
+                              onChange={(event) =>
+                                updateSelectedAttribute(attributeKey, {
+                                  type: event.target.value as ClusterAttributeType,
+                                })
+                              }
+                            >
+                              <MenuItem value="numeric">numeric</MenuItem>
+                              <MenuItem value="time">time</MenuItem>
+                            </Select>
+                          </FormControl>
+                          <TextField
+                            size="small"
+                            type="number"
+                            label="weight"
+                            value={selectedOption.weight}
+                            onChange={(event) =>
+                              updateSelectedAttribute(attributeKey, {
+                                weight: Math.max(0.05, Number(event.target.value) || 1),
+                              })
+                            }
+                            sx={{ width: 100 }}
+                          />
+                        </Stack>
+                      ) : null}
+                    </Box>
+                  );
+                })
+              )}
+            </Stack>
+          </Box>
           <Stack direction="row" spacing={1}>
             <Button
               variant="contained"
