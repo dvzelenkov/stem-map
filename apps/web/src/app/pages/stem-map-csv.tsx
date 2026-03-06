@@ -2,6 +2,7 @@ import { ChangeEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SaveIcon from '@mui/icons-material/Save';
 import {
   Alert,
@@ -1259,9 +1260,48 @@ export function StemMapCsvPage() {
         </Stack>
       </Paper>
 
+      {/* Format hint */}
+      <Paper
+        elevation={0}
+        sx={{
+          mx: 3,
+          mt: 2,
+          px: 2,
+          py: 1.2,
+          borderRadius: 2,
+          background: 'rgba(41,121,255,0.04)',
+          border: '1px solid rgba(41,121,255,0.12)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 1.5,
+        }}
+      >
+        <InfoOutlinedIcon sx={{ fontSize: 16, mt: 0.2, color: '#2979ff', flexShrink: 0 }} />
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+          <Box>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: '#37474f', display: 'block', mb: 0.3 }}>
+              CSV стволов
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#607d8b', lineHeight: 1.5 }}>
+              Обязательные: <code style={{ fontSize: 11 }}>stem_id, label, lat, lon</code>
+              <br />
+              Остальные столбцы — атрибуты (слои генерируются автоматически)
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: '#37474f', display: 'block', mb: 0.3 }}>
+              CSV связей
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#607d8b', lineHeight: 1.5 }}>
+              Поля: <code style={{ fontSize: 11 }}>edge_id, attribute_name, source_stem_id, target_stem_id, directed, weight</code>
+            </Typography>
+          </Box>
+        </Box>
+      </Paper>
+
       {/* Error */}
       {error && (
-        <Alert severity="error" sx={{ mx: 3, mt: 2, borderRadius: 2 }} onClose={() => setError('')}>
+        <Alert severity="error" sx={{ mx: 3, mt: 1.5, borderRadius: 2 }} onClose={() => setError('')}>
           {error}
         </Alert>
       )}
