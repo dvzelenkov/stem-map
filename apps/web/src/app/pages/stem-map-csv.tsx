@@ -1,10 +1,15 @@
 import { ChangeEvent, ReactNode, useEffect, useMemo, useState } from 'react';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import SaveIcon from '@mui/icons-material/Save';
 import {
   Alert,
   Backdrop,
   Box,
   Button,
   Checkbox,
+  Chip,
   CircularProgress,
   IconButton,
   MenuItem,
@@ -20,6 +25,7 @@ import {
   TableRow,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
@@ -601,146 +607,178 @@ function EditableCsvTable({
     return null;
   }
 
+  const cellSx = {
+    '& .MuiInputBase-input': { fontSize: 12, py: 0.5 },
+    '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
+  };
+
   return (
     <Box>
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        {title}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-        Всего строк: {totalRows}
-      </Typography>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#37474f' }}>
+            {title}
+          </Typography>
+          <Chip label={`${totalRows} строк`} size="small" sx={{ height: 20, fontSize: 11 }} />
+        </Stack>
+        {onAddRow && (
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={onAddRow}
+            disabled={canAddRow === false}
+            sx={{ borderRadius: 2, textTransform: 'none', fontSize: 12 }}
+          >
+            + Запись
+          </Button>
+        )}
+      </Stack>
       {titleControls && <Box sx={{ mb: 1.5 }}>{titleControls}</Box>}
-      <TableContainer>
+      <TableContainer sx={{ borderRadius: 2, border: '1px solid rgba(0,0,0,0.08)' }}>
         <Table size="small">
           <TableHead>
-            <TableRow>
-              {table.headers.map((header) => (
-                <TableCell key={header} sx={{ fontSize: 12, py: 1 }}>
-                  {(() => {
-                    const editableHeader = isHeaderEditable?.(header) ?? false;
-                    return (
-                  <Box
+            <TableRow sx={{ background: '#f5f7fa' }}>
+              {table.headers.map((header) => {
+                const editableHeader = isHeaderEditable?.(header) ?? false;
+                return (
+                  <TableCell
+                    key={header}
                     sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 0.5,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#546e7a',
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                      py: 1,
+                      borderBottom: '2px solid rgba(0,0,0,0.06)',
                     }}
                   >
-                    <Box
-                      component="button"
-                      type="button"
-                      onClick={() => editableHeader && onHeaderClick?.(header)}
-                      sx={{
-                        border: 'none',
-                        background: 'transparent',
-                        p: 0,
-                        m: 0,
-                        font: 'inherit',
-                        textAlign: 'left',
-                        color: 'inherit',
-                        cursor: editableHeader && onHeaderClick ? 'pointer' : 'default',
-                      }}
-                    >
-                      {header}
-                    </Box>
-                    {editableHeader && onHeaderDelete && (
-                      <IconButton
-                        size="small"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onHeaderDelete(header);
+                    <Stack direction="row" alignItems="center" spacing={0.5}>
+                      <Box
+                        component="span"
+                        onClick={() => editableHeader && onHeaderClick?.(header)}
+                        sx={{
+                          cursor: editableHeader && onHeaderClick ? 'pointer' : 'default',
+                          '&:hover': editableHeader ? { color: '#2979ff' } : {},
                         }}
-                        sx={{ p: 0.2 }}
                       >
-                        ×
-                      </IconButton>
-                    )}
-                  </Box>
-                    );
-                  })()}
-                </TableCell>
-              ))}
-              {onDeleteRow && <TableCell sx={{ fontSize: 12, py: 1, width: 96 }}>Действия</TableCell>}
+                        {header}
+                      </Box>
+                      {editableHeader && onHeaderDelete && (
+                        <IconButton
+                          size="small"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onHeaderDelete(header);
+                          }}
+                          sx={{
+                            p: 0.2,
+                            color: '#b0bec5',
+                            '&:hover': { color: '#e53935' },
+                          }}
+                        >
+                          <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      )}
+                    </Stack>
+                  </TableCell>
+                );
+              })}
+              {onDeleteRow && (
+                <TableCell
+                  sx={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: '#546e7a',
+                    py: 1,
+                    width: 56,
+                    borderBottom: '2px solid rgba(0,0,0,0.06)',
+                  }}
+                />
+              )}
             </TableRow>
           </TableHead>
           <TableBody>
             {pageRows.map((row, pageRowIndex) => {
               const rowIndex = pageStartIndex + pageRowIndex;
               return (
-              <TableRow key={`${title}-${rowIndex}`}>
-                {table.headers.map((header) => {
-                  const value = row[header] ?? '';
-                  const selectOptions =
-                    getSelectOptionsByCell?.(rowIndex, header, row) ?? selectOptionsByHeader?.[header];
-                  const isCheckbox = checkboxHeaders?.includes(header) ?? false;
-                  const renderedSelectOptions =
-                    selectOptions && value && !selectOptions.includes(value)
-                      ? [...selectOptions, value]
-                      : selectOptions;
-                  const hasError = isCellInvalid?.(rowIndex, header, value) ?? false;
+                <TableRow
+                  key={`${title}-${rowIndex}`}
+                  sx={{
+                    '&:nth-of-type(even)': { background: 'rgba(0,0,0,0.015)' },
+                    '&:hover': { background: 'rgba(41,121,255,0.03)' },
+                  }}
+                >
+                  {table.headers.map((header) => {
+                    const value = row[header] ?? '';
+                    const selectOptions =
+                      getSelectOptionsByCell?.(rowIndex, header, row) ?? selectOptionsByHeader?.[header];
+                    const isCheckbox = checkboxHeaders?.includes(header) ?? false;
+                    const renderedSelectOptions =
+                      selectOptions && value && !selectOptions.includes(value)
+                        ? [...selectOptions, value]
+                        : selectOptions;
+                    const hasError = isCellInvalid?.(rowIndex, header, value) ?? false;
 
-                  return (
-                    <TableCell key={`${title}-${rowIndex}-${header}`} sx={{ py: 0.5 }}>
-                      {isCheckbox ? (
-                        <Checkbox
-                          size="small"
-                          checked={toBoolean(value || 'false')}
-                          onChange={(event) =>
-                            onChange(rowIndex, header, String(event.target.checked))
-                          }
-                        />
-                      ) : renderedSelectOptions ? (
-                        <TextField
-                          select
-                          size="small"
-                          value={value}
-                          error={hasError}
-                          onChange={(event) =>
-                            onChange(rowIndex, header, event.target.value)
-                          }
-                          sx={{
-                            minWidth: 180,
-                            '& .MuiInputBase-input': {
-                              fontSize: 12,
-                              py: 0.5,
-                            },
-                          }}
-                        >
-                          {renderedSelectOptions.map((option) => (
-                            <MenuItem key={option} value={option} sx={{ fontSize: 12, minHeight: 28 }}>
-                              {option}
-                            </MenuItem>
-                          ))}
-                        </TextField>
-                      ) : (
-                        <TextField
-                          size="small"
-                          value={value}
-                          error={hasError}
-                          onChange={(event) =>
-                            onChange(rowIndex, header, event.target.value)
-                          }
-                          sx={{
-                            '& .MuiInputBase-input': {
-                              fontSize: 12,
-                              py: 0.5,
-                            },
-                          }}
-                        />
-                      )}
+                    return (
+                      <TableCell
+                        key={`${title}-${rowIndex}-${header}`}
+                        sx={{ py: 0.3, borderBottom: '1px solid rgba(0,0,0,0.04)' }}
+                      >
+                        {isCheckbox ? (
+                          <Checkbox
+                            size="small"
+                            checked={toBoolean(value || 'false')}
+                            onChange={(event) =>
+                              onChange(rowIndex, header, String(event.target.checked))
+                            }
+                            sx={{ p: 0.3 }}
+                          />
+                        ) : renderedSelectOptions ? (
+                          <TextField
+                            select
+                            size="small"
+                            value={value}
+                            error={hasError}
+                            onChange={(event) =>
+                              onChange(rowIndex, header, event.target.value)
+                            }
+                            sx={{ minWidth: 160, ...cellSx }}
+                          >
+                            {renderedSelectOptions.map((option) => (
+                              <MenuItem key={option} value={option} sx={{ fontSize: 12, minHeight: 28 }}>
+                                {option}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                        ) : (
+                          <TextField
+                            size="small"
+                            value={value}
+                            error={hasError}
+                            onChange={(event) =>
+                              onChange(rowIndex, header, event.target.value)
+                            }
+                            sx={cellSx}
+                          />
+                        )}
+                      </TableCell>
+                    );
+                  })}
+                  {onDeleteRow && (
+                    <TableCell sx={{ py: 0.3, borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                      <IconButton
+                        size="small"
+                        onClick={() => onDeleteRow(rowIndex)}
+                        sx={{ color: '#b0bec5', '&:hover': { color: '#e53935' } }}
+                      >
+                        <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
                     </TableCell>
-                  );
-                })}
-                {onDeleteRow && (
-                  <TableCell sx={{ py: 0.5 }}>
-                    <Button size="small" color="error" onClick={() => onDeleteRow(rowIndex)}>
-                      Удалить
-                    </Button>
-                  </TableCell>
-                )}
-              </TableRow>
-            )})}
+                  )}
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </TableContainer>
@@ -751,19 +789,10 @@ function EditableCsvTable({
         onPageChange={(_, nextPage) => setPage(nextPage)}
         rowsPerPage={rowsPerPage}
         rowsPerPageOptions={[50]}
+        sx={{ '& .MuiTablePagination-toolbar': { minHeight: 40 } }}
       />
-      {onAddRow && (
-        <Button
-          size="small"
-          sx={{ mt: 1.5 }}
-          onClick={onAddRow}
-          disabled={canAddRow === false}
-        >
-          Добавить запись
-        </Button>
-      )}
       {onAddRow && canAddRow === false && !!addRowDisabledReason && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+        <Typography variant="caption" sx={{ color: '#90a4ae', display: 'block', mt: 0.5 }}>
           {addRowDisabledReason}
         </Typography>
       )}
@@ -1145,335 +1174,349 @@ export function StemMapCsvPage() {
   };
 
   return (
-    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          Загрузка и редактирование CSV
-        </Typography>
-        <Stack direction="row" spacing={2} flexWrap="wrap">
-          <Button component="label" variant="outlined">
-            CSV стволов
-            <input
-              hidden
-              type="file"
-              accept=".csv"
-              onChange={handleUpload(setStemsTable, 'stems')}
-            />
-          </Button>
-          <Button component="label" variant="outlined" disabled={!stemsTable}>
-            CSV связей
-            <input
-              hidden
-              type="file"
-              accept=".csv"
-              onChange={handleUpload(setEdgesTable, 'edges')}
-            />
-          </Button>
-        </Stack>
-
-        <Paper variant="outlined" sx={{ mt: 2, p: 2, backgroundColor: '#fafafa' }}>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Формат входных данных
+    <Box sx={{ minHeight: '100vh', background: '#f0f2f5' }}>
+      {/* Header bar */}
+      <Paper
+        elevation={0}
+        sx={{
+          px: 3,
+          py: 1.5,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderRadius: 0,
+          borderBottom: '1px solid rgba(0,0,0,0.06)',
+          background: 'rgba(255,255,255,0.95)',
+          backdropFilter: 'blur(8px)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+        }}
+      >
+        <Stack direction="row" alignItems="center" spacing={2}>
+          <Tooltip title="Назад на карту">
+            <IconButton onClick={() => navigate('/trunk-map')} sx={{ color: '#546e7a' }}>
+              <ArrowBackIcon />
+            </IconButton>
+          </Tooltip>
+          <Typography variant="h6" sx={{ fontWeight: 700, color: '#37474f' }}>
+            CSV редактор
           </Typography>
-          <Box component="ul" sx={{ m: 0, pl: 2 }}>
-            <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>
-              <strong>CSV стволов:</strong> обязательные поля `stem_id, label, lat, lon`.
-              Все остальные столбцы считаются атрибутами.
-            </Typography>
-            <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>
-              <strong>CSV связей:</strong> обязательные поля
-              `edge_id, attribute_name, source_stem_id, target_stem_id, directed, weight`.
-            </Typography>
-            <Typography component="li" variant="body2">
-              Слои генерируются автоматически по названиям атрибутов из CSV стволов.
-            </Typography>
-          </Box>
-        </Paper>
-
-        <Stack
-          direction="row"
-          spacing={2}
-          flexWrap="wrap"
-          sx={{ mt: 2, width: '100%' }}
-          justifyContent="space-between"
-        >
-          <Button variant="text" onClick={() => navigate('/trunk-map')}>
-            Назад на карту
-          </Button>
           <Stack direction="row" spacing={1}>
-            <Button variant="outlined" color="error" onClick={handleClearData}>
-              Очистить данные
+            <Button
+              component="label"
+              variant="outlined"
+              size="small"
+              startIcon={<CloudUploadIcon />}
+              sx={{ borderRadius: 2, textTransform: 'none', fontSize: 12 }}
+            >
+              Стволы
+              <input hidden type="file" accept=".csv" onChange={handleUpload(setStemsTable, 'stems')} />
             </Button>
             <Button
-              variant="contained"
-              onClick={handleSaveAndOpenMap}
+              component="label"
+              variant="outlined"
+              size="small"
+              startIcon={<CloudUploadIcon />}
               disabled={!stemsTable}
+              sx={{ borderRadius: 2, textTransform: 'none', fontSize: 12 }}
             >
-              Сохранить и открыть карту
+              Связи
+              <input hidden type="file" accept=".csv" onChange={handleUpload(setEdgesTable, 'edges')} />
             </Button>
           </Stack>
         </Stack>
 
-        {error && (
-          <Alert sx={{ mt: 2 }} severity="error">
-            {error}
-          </Alert>
-        )}
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="text"
+            size="small"
+            color="error"
+            onClick={handleClearData}
+            startIcon={<DeleteOutlineIcon />}
+            sx={{ borderRadius: 2, textTransform: 'none', fontSize: 12 }}
+          >
+            Очистить
+          </Button>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={handleSaveAndOpenMap}
+            disabled={!stemsTable}
+            startIcon={<SaveIcon />}
+            sx={{
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 600,
+              fontSize: 12,
+              px: 2.5,
+              background: '#37474f',
+              '&:hover': { background: '#455a64' },
+            }}
+          >
+            Сохранить и открыть карту
+          </Button>
+        </Stack>
       </Paper>
 
-      <Paper sx={{ p: 2 }}>
-        <Tabs
-          value={activeTab}
-          onChange={(_, value: StemMapCsvTab) => {
-            if (value === activeTab) {
-              return;
-            }
+      {/* Error */}
+      {error && (
+        <Alert severity="error" sx={{ mx: 3, mt: 2, borderRadius: 2 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
 
-            setIsTabSwitching(true);
-            window.setTimeout(() => {
-              setActiveTab(value);
-              setIsTabSwitching(false);
-            }, 120);
+      {/* Content */}
+      <Box sx={{ p: 3 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            borderRadius: 3,
+            border: '1px solid rgba(0,0,0,0.06)',
+            overflow: 'hidden',
+            background: '#fff',
           }}
         >
-          <Tab value="stems" label="Стволы" />
-          <Tab value="edges" label="Связи" />
-          <Tab value="layers" label="Слои" />
-        </Tabs>
+          <Tabs
+            value={activeTab}
+            onChange={(_, value: StemMapCsvTab) => {
+              if (value === activeTab) return;
+              setIsTabSwitching(true);
+              window.setTimeout(() => {
+                setActiveTab(value);
+                setIsTabSwitching(false);
+              }, 120);
+            }}
+            sx={{
+              borderBottom: '1px solid rgba(0,0,0,0.06)',
+              px: 2,
+              '& .MuiTab-root': {
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: 13,
+                minHeight: 44,
+              },
+            }}
+          >
+            <Tab value="stems" label={`Стволы${stemsTable ? ` (${stemsTable.rows.length})` : ''}`} />
+            <Tab value="edges" label={`Связи${edgesTable ? ` (${edgesTable.rows.length})` : ''}`} />
+            <Tab value="layers" label={`Слои (${generatedLayers.length})`} />
+          </Tabs>
 
-        <Box sx={{ mt: 2 }}>
-          {activeTab === 'stems' ? (
-            <Box>
-              <EditableCsvTable
-                title="Таблица стволов"
-                table={stemsTable}
-                titleControls={
-                  stemsTable ? (
-                    <Stack direction="row" spacing={1} flexWrap="wrap">
-                      <TextField
-                        size="small"
-                        label="Новый атрибут"
-                        value={newAttributeName}
-                        onChange={(event) => setNewAttributeName(event.target.value)}
-                        sx={{
-                          minWidth: 220,
-                          '& .MuiInputBase-input': {
-                            fontSize: 12,
-                            py: 0.9,
-                          },
-                          '& .MuiInputLabel-root': {
-                            fontSize: 12,
-                          },
-                        }}
-                      />
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={handleAddStemAttribute}
-                        sx={{ fontSize: 12, py: 0.7 }}
-                      >
-                        Добавить атрибут
-                      </Button>
-                    </Stack>
-                  ) : undefined
-                }
-                onAddRow={handleAddStemRow}
-                onDeleteRow={handleDeleteStemRow}
-                isHeaderEditable={(header) => !STEM_BASE_COLUMNS.includes(header)}
-                onHeaderClick={handleRenameStemAttributeByHeader}
-                onHeaderDelete={handleDeleteStemAttributeByHeader}
-                canAddRow={canAddStemRow}
-                addRowDisabledReason="Заполните обязательные поля во всех строках. Для атрибутов достаточно одного заполненного поля в строке."
-                onChange={(rowIndex, header, value) => {
-                  setStemsTable((prev) => updateCellValue(prev, rowIndex, header, value));
-                }}
-              />
-            </Box>
-          ) : activeTab === 'edges' ? (
-            <EditableCsvTable
-              title="Таблица связей"
-              table={edgesTable}
-              onAddRow={handleAddEdgeRow}
-              onDeleteRow={handleDeleteEdgeRow}
-              canAddRow={canAddEdgeRow && hasAttributeWithAtLeastTwoStems}
-              addRowDisabledReason={
-                !hasAttributeWithAtLeastTwoStems
-                  ? 'Нужно минимум два ствола с заполненным значением одного атрибута.'
-                  : 'Заполните все поля во всех строках перед добавлением новой связи.'
-              }
-              checkboxHeaders={['directed']}
-              getSelectOptionsByCell={(_, header, row) => {
-                if (header === 'attribute_name') {
-                  return stemAttributeHeaders;
-                }
-
-                if (header !== 'source_stem_id' && header !== 'target_stem_id') {
-                  return undefined;
-                }
-
-                const selectedAttributeName = row.attribute_name;
-                const availableStemIds = stemRows
-                  .filter((stemRow) => {
-                    const stemId = (stemRow.stem_id ?? '').trim();
-                    if (!stemId) {
-                      return false;
-                    }
-
-                    if (!selectedAttributeName) {
-                      return true;
-                    }
-
-                    const attributeValue = stemRow[selectedAttributeName];
-                    return typeof attributeValue === 'string' && attributeValue.trim() !== '';
-                  })
-                  .map((stemRow) => stemRow.stem_id)
-                  .filter((stemId): stemId is string => typeof stemId === 'string' && !!stemId);
-
-                if (header === 'source_stem_id') {
-                  return availableStemIds.filter((stemId) => stemId !== row.target_stem_id);
-                }
-
-                return availableStemIds.filter((stemId) => stemId !== row.source_stem_id);
-              }}
-              isCellInvalid={(rowIndex, header, value) => {
-                if (header === 'attribute_name') {
-                  return !!value && !stemAttributeHeaders.includes(value);
-                }
-
-                if (header === 'source_stem_id' || header === 'target_stem_id') {
-                  if (!value) {
-                    return false;
+          <Box sx={{ p: 2.5 }}>
+            {activeTab === 'stems' ? (
+              <Box>
+                <EditableCsvTable
+                  title="Таблица стволов"
+                  table={stemsTable}
+                  titleControls={
+                    stemsTable ? (
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <TextField
+                          size="small"
+                          placeholder="Название нового атрибута"
+                          value={newAttributeName}
+                          onChange={(event) => setNewAttributeName(event.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleAddStemAttribute()}
+                          sx={{
+                            width: 220,
+                            '& .MuiInputBase-input': { fontSize: 12, py: 0.7 },
+                            '& .MuiOutlinedInput-root': { borderRadius: 2 },
+                          }}
+                        />
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={handleAddStemAttribute}
+                          sx={{ borderRadius: 2, textTransform: 'none', fontSize: 12 }}
+                        >
+                          + Атрибут
+                        </Button>
+                      </Stack>
+                    ) : undefined
                   }
-
-                  const row = edgesTable?.rows[rowIndex];
-                  if (!row) {
-                    return false;
+                  onAddRow={handleAddStemRow}
+                  onDeleteRow={handleDeleteStemRow}
+                  isHeaderEditable={(header) => !STEM_BASE_COLUMNS.includes(header)}
+                  onHeaderClick={handleRenameStemAttributeByHeader}
+                  onHeaderDelete={handleDeleteStemAttributeByHeader}
+                  canAddRow={canAddStemRow}
+                  addRowDisabledReason="Заполните обязательные поля во всех строках."
+                  onChange={(rowIndex, header, value) => {
+                    setStemsTable((prev) => updateCellValue(prev, rowIndex, header, value));
+                  }}
+                />
+                {!stemsTable && (
+                  <Stack spacing={1.5} alignItems="center" sx={{ py: 6 }}>
+                    <CloudUploadIcon sx={{ fontSize: 48, color: '#b0bec5' }} />
+                    <Typography variant="body2" sx={{ color: '#78909c' }}>
+                      Загрузите CSV стволов или создайте первый ствол вручную
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={handleAddStemRow}
+                      sx={{ borderRadius: 2, textTransform: 'none' }}
+                    >
+                      Создать ствол
+                    </Button>
+                  </Stack>
+                )}
+              </Box>
+            ) : activeTab === 'edges' ? (
+              <Box>
+                <EditableCsvTable
+                  title="Таблица связей"
+                  table={edgesTable}
+                  onAddRow={handleAddEdgeRow}
+                  onDeleteRow={handleDeleteEdgeRow}
+                  canAddRow={canAddEdgeRow && hasAttributeWithAtLeastTwoStems}
+                  addRowDisabledReason={
+                    !hasAttributeWithAtLeastTwoStems
+                      ? 'Нужно минимум два ствола с заполненным значением одного атрибута.'
+                      : 'Заполните все поля перед добавлением новой связи.'
                   }
-
-                  const options = (() => {
+                  checkboxHeaders={['directed']}
+                  getSelectOptionsByCell={(_, header, row) => {
+                    if (header === 'attribute_name') return stemAttributeHeaders;
+                    if (header !== 'source_stem_id' && header !== 'target_stem_id') return undefined;
                     const selectedAttributeName = row.attribute_name;
                     const availableStemIds = stemRows
                       .filter((stemRow) => {
                         const stemId = (stemRow.stem_id ?? '').trim();
-                        if (!stemId) {
-                          return false;
-                        }
-
-                        if (!selectedAttributeName) {
-                          return true;
-                        }
-
+                        if (!stemId) return false;
+                        if (!selectedAttributeName) return true;
                         const attributeValue = stemRow[selectedAttributeName];
-                        return (
-                          typeof attributeValue === 'string' && attributeValue.trim() !== ''
-                        );
+                        return typeof attributeValue === 'string' && attributeValue.trim() !== '';
                       })
                       .map((stemRow) => stemRow.stem_id)
-                      .filter(
-                        (stemId): stemId is string => typeof stemId === 'string' && !!stemId
-                      );
-
+                      .filter((stemId): stemId is string => typeof stemId === 'string' && !!stemId);
                     if (header === 'source_stem_id') {
                       return availableStemIds.filter((stemId) => stemId !== row.target_stem_id);
                     }
-
                     return availableStemIds.filter((stemId) => stemId !== row.source_stem_id);
-                  })();
-
-                  return !options.includes(value);
-                }
-
-                return false;
-              }}
-              onChange={(rowIndex, header, value) => {
-                setEdgesTable((prev) => updateCellValue(prev, rowIndex, header, value));
-              }}
-            />
-          ) : (
-            <Box>
-              {!!generatedLayers.length && (
-                <>
-                  <Typography variant="h6" sx={{ mb: 2 }}>
-                    Таблица слоёв
-                  </Typography>
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell sx={{ fontSize: 12, py: 1 }}>layer_id</TableCell>
-                          <TableCell sx={{ fontSize: 12, py: 1 }}>attribute_name</TableCell>
-                          <TableCell sx={{ fontSize: 12, py: 1 }}>color</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {generatedLayers.map((layer) => (
-                          <TableRow key={layer.layer_id}>
-                            <TableCell sx={{ fontSize: 12, py: 0.5 }}>{layer.layer_id}</TableCell>
-                            <TableCell sx={{ fontSize: 12, py: 0.5 }}>{layer.attribute_name}</TableCell>
-                            <TableCell sx={{ py: 0.5 }}>
-                              <TextField
-                                type="color"
-                                size="small"
-                                value={layerColors[layer.layer_id] ?? DEFAULT_LAYER_COLOR}
-                                onChange={(event) =>
-                                  setLayerColors((prevColors) => ({
-                                    ...prevColors,
-                                    [layer.layer_id]: normalizeHexColor(event.target.value),
-                                  }))
-                                }
-                                sx={{ width: 72 }}
-                              />
+                  }}
+                  isCellInvalid={(rowIndex, header, value) => {
+                    if (header === 'attribute_name') return !!value && !stemAttributeHeaders.includes(value);
+                    if (header !== 'source_stem_id' && header !== 'target_stem_id') return false;
+                    if (!value) return false;
+                    const row = edgesTable?.rows[rowIndex];
+                    if (!row) return false;
+                    const selectedAttributeName = row.attribute_name;
+                    const availableStemIds = stemRows
+                      .filter((stemRow) => {
+                        const stemId = (stemRow.stem_id ?? '').trim();
+                        if (!stemId) return false;
+                        if (!selectedAttributeName) return true;
+                        const attributeValue = stemRow[selectedAttributeName];
+                        return typeof attributeValue === 'string' && attributeValue.trim() !== '';
+                      })
+                      .map((stemRow) => stemRow.stem_id)
+                      .filter((stemId): stemId is string => typeof stemId === 'string' && !!stemId);
+                    const opts =
+                      header === 'source_stem_id'
+                        ? availableStemIds.filter((id) => id !== row.target_stem_id)
+                        : availableStemIds.filter((id) => id !== row.source_stem_id);
+                    return !opts.includes(value);
+                  }}
+                  onChange={(rowIndex, header, value) => {
+                    setEdgesTable((prev) => updateCellValue(prev, rowIndex, header, value));
+                  }}
+                />
+                {!edgesTable && (
+                  <Stack spacing={1.5} alignItems="center" sx={{ py: 6 }}>
+                    <Typography variant="body2" sx={{ color: '#78909c' }}>
+                      Загрузите CSV связей или создайте первую связь вручную
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={handleAddEdgeRow}
+                      disabled={!hasAttributeWithAtLeastTwoStems}
+                      sx={{ borderRadius: 2, textTransform: 'none' }}
+                    >
+                      Создать связь
+                    </Button>
+                  </Stack>
+                )}
+              </Box>
+            ) : (
+              <Box>
+                {generatedLayers.length > 0 ? (
+                  <>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#37474f', mb: 1.5 }}>
+                      Таблица слоёв
+                    </Typography>
+                    <TableContainer sx={{ borderRadius: 2, border: '1px solid rgba(0,0,0,0.08)' }}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow sx={{ background: '#f5f7fa' }}>
+                            <TableCell sx={{ fontSize: 11, fontWeight: 700, color: '#546e7a', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                              layer_id
+                            </TableCell>
+                            <TableCell sx={{ fontSize: 11, fontWeight: 700, color: '#546e7a', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                              attribute_name
+                            </TableCell>
+                            <TableCell sx={{ fontSize: 11, fontWeight: 700, color: '#546e7a', textTransform: 'uppercase', letterSpacing: 0.5, width: 80 }}>
+                              color
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </>
-              )}
-              {!generatedLayers.length && (
-                <Typography variant="body2" color="text.secondary">
-                  Сначала загрузите таблицу стволов, чтобы сгенерировать слои.
-                </Typography>
-              )}
-            </Box>
-          )}
+                        </TableHead>
+                        <TableBody>
+                          {generatedLayers.map((layer) => (
+                            <TableRow
+                              key={layer.layer_id}
+                              sx={{ '&:hover': { background: 'rgba(41,121,255,0.03)' } }}
+                            >
+                              <TableCell sx={{ fontSize: 12 }}>{layer.layer_id}</TableCell>
+                              <TableCell sx={{ fontSize: 12 }}>{layer.attribute_name}</TableCell>
+                              <TableCell>
+                                <input
+                                  type="color"
+                                  value={layerColors[layer.layer_id] ?? DEFAULT_LAYER_COLOR}
+                                  onChange={(event) =>
+                                    setLayerColors((prevColors) => ({
+                                      ...prevColors,
+                                      [layer.layer_id]: normalizeHexColor(event.target.value),
+                                    }))
+                                  }
+                                  style={{
+                                    width: 32,
+                                    height: 24,
+                                    padding: 0,
+                                    border: '1px solid rgba(0,0,0,0.1)',
+                                    borderRadius: 4,
+                                    cursor: 'pointer',
+                                  }}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </>
+                ) : (
+                  <Stack spacing={1.5} alignItems="center" sx={{ py: 6 }}>
+                    <Typography variant="body2" sx={{ color: '#78909c' }}>
+                      Загрузите таблицу стволов, чтобы сгенерировать слои
+                    </Typography>
+                  </Stack>
+                )}
+              </Box>
+            )}
+          </Box>
+        </Paper>
+      </Box>
 
-          {activeTab === 'stems' && !stemsTable && (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="body2" color="text.secondary">
-                Загрузите CSV стволов или создайте первый ствол вручную.
-              </Typography>
-              <Button size="small" variant="outlined" onClick={handleAddStemRow}>
-                Добавить ствол
-              </Button>
-            </Stack>
-          )}
-          {activeTab === 'edges' && !edgesTable && (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="body2" color="text.secondary">
-                Загрузите CSV связей или создайте первую связь вручную.
-              </Typography>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={handleAddEdgeRow}
-                disabled={!hasAttributeWithAtLeastTwoStems}
-              >
-                Добавить связь
-              </Button>
-            </Stack>
-          )}
-        </Box>
-      </Paper>
       <Backdrop
         open={isImporting || isTabSwitching}
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 10, color: '#fff' }}
+        sx={{ zIndex: 30, color: '#fff' }}
       >
         <Stack spacing={1} alignItems="center">
           <CircularProgress color="inherit" />
           <Typography variant="body2">
-            {isImporting ? 'Импорт CSV...' : 'Переключение вкладки...'}
+            {isImporting ? 'Импорт CSV...' : 'Переключение...'}
           </Typography>
         </Stack>
       </Backdrop>
