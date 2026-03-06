@@ -1,7 +1,7 @@
 import DeckGL from '@deck.gl/react';
 import { TextLayer } from '@deck.gl/layers';
 import { LayersList, ViewStateChangeParameters } from '@deck.gl/core';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import {
@@ -283,6 +283,25 @@ export function StemMap({
   const [columnRadiusScale, setColumnRadiusScale] = useState<number>(0.5);
   const [defaultColumnColor, setDefaultColumnColor] = useState<string>('#455A64');
   const [attributeFilters, setAttributeFilters] = useState<AttributeFilter[]>([]);
+
+  const colorDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const debouncedSetColumnColor = useCallback((color: string) => {
+    clearTimeout(colorDebounceRef.current);
+    colorDebounceRef.current = setTimeout(() => setDefaultColumnColor(color), 60);
+  }, []);
+  const debouncedSetFilterColor = useCallback(
+    (filterId: string, color: string) => {
+      clearTimeout(colorDebounceRef.current);
+      colorDebounceRef.current = setTimeout(
+        () =>
+          setAttributeFilters((prev) =>
+            prev.map((f) => (f.id === filterId ? { ...f, highlightColor: color } : f))
+          ),
+        60
+      );
+    },
+    []
+  );
 
   const availablePropertyKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -802,7 +821,7 @@ export function StemMap({
               <input
                 type="color"
                 value={defaultColumnColor}
-                onChange={(e) => setDefaultColumnColor(e.target.value)}
+                onChange={(e) => debouncedSetColumnColor(e.target.value)}
                 style={{
                   width: 20,
                   height: 20,
@@ -972,7 +991,7 @@ export function StemMap({
                           type="color"
                           value={filter.highlightColor}
                           onChange={(e) =>
-                            updateFilter(filter.id, { highlightColor: e.target.value })
+                            debouncedSetFilterColor(filter.id, e.target.value)
                           }
                           style={{
                             width: 18,

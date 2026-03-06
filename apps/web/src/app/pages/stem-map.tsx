@@ -151,7 +151,7 @@ export function StemMapPage() {
     []
   );
 
-  const [queries, setQueries] = useState<ClusterQuery[]>(() => [createQuery(0)]);
+  const [queries, setQueries] = useState<ClusterQuery[]>([]);
   const [expandedQueryId, setExpandedQueryId] = useState<string | false>(false);
 
   const updateQuery = useCallback(
@@ -176,15 +176,7 @@ export function StemMapPage() {
 
   const removeQuery = useCallback(
     (queryId: string) => {
-      setQueries((prev) => {
-        const next = prev.filter((q) => q.id !== queryId);
-        if (next.length === 0) {
-          const fresh = createQuery(0);
-          setExpandedQueryId(fresh.id);
-          return [fresh];
-        }
-        return next;
-      });
+      setQueries((prev) => prev.filter((q) => q.id !== queryId));
       if (expandedQueryId === queryId) {
         setExpandedQueryId(false);
       }
