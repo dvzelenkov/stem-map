@@ -1,9 +1,11 @@
 import { PolygonLayer } from '@deck.gl/layers';
-import { StemMap, StemMapInputData } from '@study/trunk-map';
+import { Stem, StemMap, StemMapInputData } from '@study/trunk-map';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import {
   Accordion,
   AccordionDetails,
@@ -13,8 +15,10 @@ import {
   Button,
   Checkbox,
   Chip,
+  Divider,
   FormControl,
   FormControlLabel,
+  IconButton,
   InputLabel,
   MenuItem,
   Paper,
@@ -51,11 +55,19 @@ interface ClusterPolygonFeatureCollection {
 
 type ClusterAttributeType = 'numeric' | 'time';
 type ClusterMode = 'auto' | 'quality' | 'scalable';
+type ClusterFilterOp = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'contains';
 
 interface ClusterFeatureAttributeOption {
   key: string;
   type: ClusterAttributeType;
   weight: number;
+}
+
+interface ClusterStemFilter {
+  id: string;
+  key: string;
+  op: ClusterFilterOp;
+  value: string;
 }
 
 interface ClusterQuery {
@@ -69,6 +81,7 @@ interface ClusterQuery {
   h3Resolution: number;
   heightScale: number;
   selectedAttributes: ClusterFeatureAttributeOption[];
+  filters: ClusterStemFilter[];
   clusters: ClusterPolygonFeatureCollection | null;
   isLoading: boolean;
   errorText: string;
@@ -86,6 +99,45 @@ const QUERY_COLORS: [number, number, number][] = [
 ];
 
 let nextQueryId = 1;
+let nextClusterFilterId = 1;
+
+const CLUSTER_FILTER_OPS: { value: ClusterFilterOp; label: string }[] = [
+  { value: '=', label: '=' },
+  { value: '!=', label: '≠' },
+  { value: '>', label: '>' },
+  { value: '<', label: '<' },
+  { value: '>=', label: '≥' },
+  { value: '<=', label: '≤' },
+  { value: 'contains', label: '∋' },
+];
+
+const stemMatchesClusterFilter = (
+  properties: Record<string, unknown> | undefined,
+  filter: ClusterStemFilter
+): boolean => {
+  if (!filter.key || filter.value === '') return true;
+  const raw = properties?.[filter.key];
+  if (raw === undefined || raw === null) return false;
+
+  const strVal = String(raw);
+  if (filter.op === 'contains') {
+    return strVal.toLowerCase().includes(filter.value.toLowerCase());
+  }
+
+  const numProp = Number(raw);
+  const numFilter = Number(filter.value);
+  const canCompare = !isNaN(numProp) && !isNaN(numFilter);
+
+  switch (filter.op) {
+    case '=': return canCompare ? numProp === numFilter : strVal === filter.value;
+    case '!=': return canCompare ? numProp !== numFilter : strVal !== filter.value;
+    case '>': return canCompare ? numProp > numFilter : strVal > filter.value;
+    case '<': return canCompare ? numProp < numFilter : strVal < filter.value;
+    case '>=': return canCompare ? numProp >= numFilter : strVal >= filter.value;
+    case '<=': return canCompare ? numProp <= numFilter : strVal <= filter.value;
+    default: return true;
+  }
+};
 
 const createQuery = (index: number): ClusterQuery => ({
   id: `q-${nextQueryId++}`,
@@ -98,6 +150,7 @@ const createQuery = (index: number): ClusterQuery => ({
   h3Resolution: 6,
   heightScale: 1,
   selectedAttributes: [],
+  filters: [],
   clusters: null,
   isLoading: false,
   errorText: '',
@@ -191,8 +244,14 @@ export function StemMapPage() {
 
       updateQuery(queryId, { errorText: '', isLoading: true });
       try {
+        const filteredStems = query.filters.length > 0
+          ? currentData.stems.filter((stem) =>
+              query.filters.every((f) => stemMatchesClusterFilter(stem.properties, f))
+            )
+          : currentData.stems;
+
         const payload = {
-          points: currentData.stems.map((stem) => ({
+          points: filteredStems.map((stem) => ({
             id: stem.stem_id,
             lat: stem.geo.lat,
             lon: stem.geo.lon,
@@ -271,6 +330,16 @@ export function StemMapPage() {
     return [...new Set(keysFromLayers)];
   }, [currentData.layers]);
 
+  const allPropertyKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const stem of currentData.stems) {
+      if (stem.properties) {
+        for (const k of Object.keys(stem.properties)) keys.add(k);
+      }
+    }
+    return [...keys].sort();
+  }, [currentData.stems]);
+
   const totalClusters = useMemo(
     () =>
       queries.reduce((sum, q) => sum + (q.clusters?.features.length ?? 0), 0),
@@ -345,7 +414,8 @@ export function StemMapPage() {
               onRemove={() => removeQuery(query.id)}
               onBuild={() => handleBuildClusters(query.id)}
               availableAttributeKeys={availableAttributeKeys}
-              stemsCount={currentData.stems.length}
+              allPropertyKeys={allPropertyKeys}
+              stems={currentData.stems}
             />
           ))}
 
@@ -424,7 +494,8 @@ interface ClusterQueryAccordionProps {
   onRemove: () => void;
   onBuild: () => void;
   availableAttributeKeys: string[];
-  stemsCount: number;
+  allPropertyKeys: string[];
+  stems: Stem[];
 }
 
 function ClusterQueryAccordion({
@@ -435,7 +506,8 @@ function ClusterQueryAccordion({
   onRemove,
   onBuild,
   availableAttributeKeys,
-  stemsCount,
+  allPropertyKeys,
+  stems,
 }: ClusterQueryAccordionProps) {
   const [r, g, b] = query.color;
   const rgb = `rgb(${r},${g},${b})`;
@@ -470,6 +542,34 @@ function ClusterQueryAccordion({
       ),
     });
   };
+
+  const addFilter = () => {
+    onUpdate({
+      filters: [
+        ...query.filters,
+        { id: `cf-${nextClusterFilterId++}`, key: '', op: '=', value: '' },
+      ],
+    });
+  };
+
+  const removeFilter = (filterId: string) => {
+    onUpdate({ filters: query.filters.filter((f) => f.id !== filterId) });
+  };
+
+  const updateFilter = (filterId: string, patch: Partial<ClusterStemFilter>) => {
+    onUpdate({
+      filters: query.filters.map((f) =>
+        f.id === filterId ? { ...f, ...patch } : f
+      ),
+    });
+  };
+
+  const filteredStemsCount = useMemo(() => {
+    if (query.filters.length === 0) return stems.length;
+    return stems.filter((stem) =>
+      query.filters.every((f) => stemMatchesClusterFilter(stem.properties, f))
+    ).length;
+  }, [stems, query.filters]);
 
   return (
     <Accordion
@@ -753,11 +853,84 @@ function ClusterQueryAccordion({
             </Box>
           )}
 
+          {/* Stem filters */}
+          <Divider sx={{ my: 0.5, borderColor: 'rgba(0,0,0,0.06)' }} />
+          <Box>
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Stack direction="row" alignItems="center" spacing={0.5}>
+                <FilterListIcon sx={{ fontSize: 14, color: '#78909c' }} />
+                <Typography variant="caption" sx={{ color: '#78909c', fontWeight: 500, fontSize: 11 }}>
+                  Фильтр стволов
+                </Typography>
+              </Stack>
+              <Chip
+                label={`${filteredStemsCount} / ${stems.length}`}
+                size="small"
+                sx={{ height: 18, fontSize: 10, fontWeight: 600, background: 'rgba(0,0,0,0.05)' }}
+              />
+            </Stack>
+            <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+              {query.filters.map((filter) => (
+                <Stack key={filter.id} direction="row" spacing={0.4} alignItems="center">
+                  <FormControl size="small" sx={{ minWidth: 80, flex: 1 }}>
+                    <Select
+                      displayEmpty
+                      value={filter.key}
+                      onChange={(e) => updateFilter(filter.id, { key: e.target.value })}
+                      sx={{ fontSize: 11, borderRadius: 1.5, '& .MuiSelect-select': { py: '3px' } }}
+                    >
+                      <MenuItem value="" sx={{ fontSize: 11 }}><em>Ключ</em></MenuItem>
+                      {allPropertyKeys.map((k) => (
+                        <MenuItem key={k} value={k} sx={{ fontSize: 11 }}>{k}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 42 }}>
+                    <Select
+                      value={filter.op}
+                      onChange={(e) => updateFilter(filter.id, { op: e.target.value as ClusterFilterOp })}
+                      sx={{ fontSize: 11, borderRadius: 1.5, '& .MuiSelect-select': { py: '3px', px: 0.8 } }}
+                    >
+                      {CLUSTER_FILTER_OPS.map((op) => (
+                        <MenuItem key={op.value} value={op.value} sx={{ fontSize: 11 }}>{op.label}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    size="small"
+                    placeholder="Значение"
+                    value={filter.value}
+                    onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
+                    sx={{
+                      flex: 1,
+                      '& .MuiInputBase-input': { fontSize: 11, py: '3px', px: 0.8 },
+                      '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
+                    }}
+                  />
+                  <IconButton
+                    size="small"
+                    onClick={() => removeFilter(filter.id)}
+                    sx={{ p: 0.3, color: '#b0bec5', '&:hover': { color: '#e53935' } }}
+                  >
+                    <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </Stack>
+              ))}
+              <Button
+                size="small"
+                onClick={addFilter}
+                sx={{ alignSelf: 'flex-start', textTransform: 'none', fontSize: 11, color: '#78909c', px: 0.5 }}
+              >
+                + Фильтр
+              </Button>
+            </Stack>
+          </Box>
+
           <Stack direction="row" spacing={1} sx={{ pt: 0.5 }}>
             <Button
               variant="contained"
               onClick={onBuild}
-              disabled={query.isLoading || stemsCount === 0}
+              disabled={query.isLoading || filteredStemsCount === 0}
               size="small"
               sx={{
                 flex: 1,
