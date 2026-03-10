@@ -323,7 +323,7 @@ const getRestoredStemMapCsvEditorData = (): StemMapCsvEditorStorageData | null =
   };
 };
 
-const parseCsv = (text: string): CsvTableData => {
+export const parseCsv = (text: string): CsvTableData => {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -359,7 +359,7 @@ const toBoolean = (value: string): boolean => {
   return normalized === 'true' || normalized === '1' || normalized === 'yes';
 };
 
-const getGeneratedLayers = (headers: string[]): Layer[] => {
+export const getGeneratedLayers = (headers: string[]): Layer[] => {
   const attributeHeaders = headers.filter(
     (header) => !STEM_BASE_COLUMNS.includes(header)
   );
@@ -378,7 +378,7 @@ const getGeneratedLayers = (headers: string[]): Layer[] => {
   }));
 };
 
-const mapStems = (rows: CsvRow[], headers: string[]): Stem[] =>
+export const mapStems = (rows: CsvRow[], headers: string[]): Stem[] =>
   rows.map((row) => {
     const { stem_id, label, lat, lon } = row;
     const propertyEntries = headers

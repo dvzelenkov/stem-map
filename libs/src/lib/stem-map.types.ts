@@ -1,4 +1,4 @@
-import { CSSProperties } from 'react';
+import { CSSProperties, ReactNode } from 'react';
 import { LayersList, MapViewState } from '@deck.gl/core';
 
 export interface Layer {
@@ -63,4 +63,5 @@ export interface StemMapProps {
   initialViewState?: Partial<MapViewState>;
   resolveLayerValue?: LayerValueResolver;
   overlayLayers?: LayersList;
+  panelContent?: ReactNode;
 }
