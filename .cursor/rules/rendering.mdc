@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+When working with React components, avoid extracting JSX elements into variables inside the component body as they will be recreated on every render, which negatively impacts performance. Instead, either keep JSX inline or use useMemo to memoize the elements with proper dependencies. Also use useCallback for event handlers to prevent unnecessary re-renders of child components. This follows React performance optimization best practices.

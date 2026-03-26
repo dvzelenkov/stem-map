@@ -193,6 +193,7 @@ export function StemMap({
   resolveLayerValue,
   overlayLayers,
   panelContent,
+  getStemColor,
 }: StemMapProps) {
   validateStemMapInput(data);
 
@@ -452,14 +453,14 @@ export function StemMap({
       elevationScale: 1.4,
       getFillColor: (item) => {
         if (item.stem_id === selectedStemId) return SELECTED_COLOR;
-        return NODE_COLOR;
+        return getStemColor?.(item) ?? NODE_COLOR;
       },
       getLineColor: [255, 255, 255, 240],
       lineWidthMinPixels: 1,
       getElevation: () =>
         maxConnectedLayersCount * COLUMN_ELEVATION_UNIT * heightScaleByZoom,
       updateTriggers: {
-        getFillColor: [activeLayerId, selectedStemId],
+        getFillColor: [activeLayerId, selectedStemId, getStemColor],
         getElevation: [heightScaleByZoom, maxConnectedLayersCount],
         radius: [currentRadius, columnRadiusScale],
       },
@@ -560,7 +561,7 @@ export function StemMap({
           background: 'rgba(255,255,255,0.92)',
           backdropFilter: 'blur(12px)',
           p: 2,
-          width: 240,
+          width: 300,
           maxHeight: 'calc(100vh - 32px)',
           overflowY: 'auto',
           overflowX: 'hidden',

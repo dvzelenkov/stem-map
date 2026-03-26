@@ -1,0 +1,30 @@
+---
+description: Preserve analytics and metrics tracking calls during refactoring or component changes
+globs: **/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Preserve Analytics & Metrics Tracking
+
+When refactoring, modifying, or restructuring components and services, **never remove or lose** analytics/metrics calls. Every tracking call that existed before the change must remain in the updated code.
+
+## Tracking methods to preserve
+
+| System | Methods / Attributes | Import |
+|--------|---------------------|--------|
+| **Mixpanel** | `sendMixpanelEvent(...)` | via `useAppContext()` |
+| **Mixpanel** | `MIXPANEL_EVENT.*`, `MIXPANEL_CTA_ID.*` | `@/utils/mixpanel-events`, `@/utils/mixpanel-cta-ids` |
+| **Mixpanel** | `data-mp-track-cta-id` attribute on JSX elements | — |
+| **GTM** | `pushGTMEvent(...)` | `@/utils/gtm` |
+| **Hotjar** | `window.hj(...)` | global |
+| **Datadog** | `setDatadogUser`, `setDatadogUserProperty`, `setDatadogSessionContext`, `datadogLogger` | `@/utils/datadog` |
+
+## Rules
+
+1. **Before changing** a component or service, identify all tracking calls in the original code.
+2. **After changing**, verify every original tracking call is still present and fires under the same conditions.
+3. If a component is **split** into smaller components, move each tracking call to the appropriate child — do not leave them behind.
+4. If a component is **merged**, combine all tracking calls from the original components.
+5. If an event handler containing a tracking call is **renamed or restructured**, ensure the tracking call remains inside the new handler.
+6. **Never silently drop** `data-mp-track-cta-id` attributes from JSX elements during refactoring.
+7. If a tracking call genuinely needs to be removed, **explicitly flag it** for review rather than removing silently.

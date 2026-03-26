@@ -42,6 +42,7 @@ interface CsvTableData {
 const STEM_MAP_STORAGE_KEY = 'stem-map-uploaded-data';
 const STEM_MAP_EDITOR_STORAGE_KEY = 'stem-map-csv-editor-data';
 const STEM_BASE_COLUMNS = ['stem_id', 'label', 'lat', 'lon'];
+const SYSTEM_PROPERTIES = ['__group', '__groupColor'];
 type StemMapCsvTab = 'stems' | 'edges' | 'layers';
 
 interface StemMapCsvEditorStorageData {
@@ -63,6 +64,71 @@ interface StoredStemMapData {
 
 const DEFAULT_LAYER_COLOR = '#1976d2';
 const COLOR_GENERATION_ATTEMPTS = 50;
+
+const IDB_NAME = 'stem-map-db';
+const IDB_VERSION = 1;
+const IDB_STORE = 'groups';
+const IDB_KEY = 'all-groups';
+const CSV_EDITOR_GROUP_ID = 'g-csv-editor';
+
+interface IDBStemGroup {
+  id: string;
+  name: string;
+  color: string;
+  visible: boolean;
+  filters: unknown[];
+  stems: Stem[];
+  layers: Layer[];
+  edges: Edge[];
+}
+
+const openGroupsDB = (): Promise<IDBDatabase> =>
+  new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB not available'));
+      return;
+    }
+    const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+const loadGroupsFromIDB = async (): Promise<IDBStemGroup[]> => {
+  try {
+    const db = await openGroupsDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
+      req.onsuccess = () => {
+        const data = req.result;
+        resolve(Array.isArray(data) ? data : []);
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  }
+};
+
+const saveGroupsToIDB = async (groups: IDBStemGroup[]): Promise<void> => {
+  try {
+    const db = await openGroupsDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(groups, IDB_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // silently fail
+  }
+};
 
 const splitCsvLine = (line: string): string[] => {
   const values: string[] = [];
@@ -259,7 +325,7 @@ const getTablesFromStemMapData = (data: StemMapInputData): StemMapCsvTablesData 
   const extraAttributes = new Set<string>();
   data.stems.forEach((stem) => {
     Object.keys(stem.properties || {}).forEach((propertyName) => {
-      if (!layerAttributeNames.includes(propertyName)) {
+      if (!layerAttributeNames.includes(propertyName) && !SYSTEM_PROPERTIES.includes(propertyName)) {
         extraAttributes.add(propertyName);
       }
     });
@@ -361,7 +427,7 @@ const toBoolean = (value: string): boolean => {
 
 export const getGeneratedLayers = (headers: string[]): Layer[] => {
   const attributeHeaders = headers.filter(
-    (header) => !STEM_BASE_COLUMNS.includes(header)
+    (header) => !STEM_BASE_COLUMNS.includes(header) && !SYSTEM_PROPERTIES.includes(header)
   );
 
   if (!attributeHeaders.length) {
@@ -382,7 +448,7 @@ export const mapStems = (rows: CsvRow[], headers: string[]): Stem[] =>
   rows.map((row) => {
     const { stem_id, label, lat, lon } = row;
     const propertyEntries = headers
-      .filter((header) => !STEM_BASE_COLUMNS.includes(header))
+      .filter((header) => !STEM_BASE_COLUMNS.includes(header) && !SYSTEM_PROPERTIES.includes(header))
       .map((attributeName) => [attributeName, row[attributeName] ?? '']);
 
     return {
@@ -820,6 +886,9 @@ export function StemMapCsvPage() {
   const [error, setError] = useState<string>('');
   const [isImporting, setIsImporting] = useState<boolean>(false);
   const [isTabSwitching, setIsTabSwitching] = useState<boolean>(false);
+  const [isLoadingFromDB, setIsLoadingFromDB] = useState<boolean>(
+    !restoredEditorData?.stemsTable && !restoredEditorData?.edgesTable
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -835,6 +904,51 @@ export function StemMapCsvPage() {
 
     localStorage.setItem(STEM_MAP_EDITOR_STORAGE_KEY, JSON.stringify(storageData));
   }, [activeTab, edgesTable, layerColors, stemsTable]);
+
+  useEffect(() => {
+    if (restoredEditorData?.stemsTable || restoredEditorData?.edgesTable) {
+      setIsLoadingFromDB(false);
+      return;
+    }
+
+    setIsLoadingFromDB(true);
+    loadGroupsFromIDB()
+      .then((groups) => {
+        if (!groups.length) return;
+
+        const allStems: Stem[] = [];
+        const allLayers: Layer[] = [];
+        const allEdges: Edge[] = [];
+        const layerIds = new Set<string>();
+
+        for (const group of groups) {
+          allStems.push(...(group.stems ?? []));
+          for (const layer of group.layers ?? []) {
+            if (!layerIds.has(layer.layer_id)) {
+              allLayers.push(layer);
+              layerIds.add(layer.layer_id);
+            }
+          }
+          allEdges.push(...(group.edges ?? []));
+        }
+
+        if (allStems.length === 0) return;
+
+        const mergedData: StemMapInputData = {
+          layers: allLayers,
+          stems: allStems,
+          edges: allEdges,
+          copies: 'implicit',
+        };
+        const tables = getTablesFromStemMapData(mergedData);
+        setStemsTable((prev) => prev ?? tables.stemsTable);
+        setEdgesTable((prev) => prev ?? tables.edgesTable);
+      })
+      .finally(() => {
+        setIsLoadingFromDB(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const generatedLayers = useMemo(() => {
     if (!stemsTable) {
@@ -924,7 +1038,7 @@ export function StemMapCsvPage() {
       }
     };
 
-  const handleSaveAndOpenMap = () => {
+  const handleSaveAndOpenMap = async () => {
     setError('');
 
     if (!stemsTable) {
@@ -967,6 +1081,24 @@ export function StemMapCsvPage() {
           layerColors,
         })
       );
+
+      const existingGroups = await loadGroupsFromIDB();
+      const csvGroup: IDBStemGroup = {
+        id: CSV_EDITOR_GROUP_ID,
+        name: 'CSV Редактор',
+        color: '#1976d2',
+        visible: true,
+        filters: [],
+        stems,
+        layers,
+        edges,
+      };
+      const existingIndex = existingGroups.findIndex((g) => g.id === CSV_EDITOR_GROUP_ID);
+      const updatedGroups = existingIndex >= 0
+        ? existingGroups.map((g, i) => (i === existingIndex ? csvGroup : g))
+        : [...existingGroups, csvGroup];
+      await saveGroupsToIDB(updatedGroups);
+
       navigate('/trunk-map');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Не удалось сохранить данные');
@@ -1550,13 +1682,13 @@ export function StemMapCsvPage() {
       </Box>
 
       <Backdrop
-        open={isImporting || isTabSwitching}
+        open={isImporting || isTabSwitching || isLoadingFromDB}
         sx={{ zIndex: 30, color: '#fff' }}
       >
         <Stack spacing={1} alignItems="center">
           <CircularProgress color="inherit" />
           <Typography variant="body2">
-            {isImporting ? 'Импорт CSV...' : 'Переключение...'}
+            {isLoadingFromDB ? 'Загрузка данных...' : isImporting ? 'Импорт CSV...' : 'Переключение...'}
           </Typography>
         </Stack>
       </Backdrop>

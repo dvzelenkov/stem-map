@@ -112,7 +112,6 @@ const CLUSTER_FILTER_OPS: { value: ClusterFilterOp; label: string }[] = [
   { value: '<', label: '<' },
   { value: '>=', label: '≥' },
   { value: '<=', label: '≤' },
-  { value: 'contains', label: '∋' },
 ];
 
 const stemMatchesClusterFilter = (
@@ -208,12 +207,16 @@ const GROUP_COLORS = [
   '#c2185b', '#00796b', '#fbc02d', '#512da8',
 ];
 
+type FilterMode = 'hide' | 'recolor';
+
 interface StemGroup {
   id: string;
   name: string;
   color: string;
   visible: boolean;
   filters: ClusterStemFilter[];
+  filterMode: FilterMode;
+  filterColor: string;
   stems: Stem[];
   layers: Layer[];
   edges: Edge[];
@@ -256,7 +259,12 @@ const loadGroupsFromIDB = async (): Promise<StemGroup[]> => {
           return;
         }
         resolve(
-          data.map((g: StemGroup) => ({ ...g, filters: g.filters ?? [] }))
+          data.map((g: StemGroup) => ({
+            ...g,
+            filters: g.filters ?? [],
+            filterMode: g.filterMode ?? 'hide',
+            filterColor: g.filterColor ?? '#9e9e9e',
+          }))
         );
       };
       req.onerror = () => resolve([]);
@@ -290,20 +298,38 @@ const mergeGroupsData = (groups: StemGroup[]): StemMapInputData => {
   const layerIds = new Set<string>();
 
   for (const group of visible) {
-    const groupStems =
-      group.filters.length > 0
+    const hasFilters = group.filters.length > 0;
+
+    if (hasFilters && group.filterMode === 'recolor') {
+      for (const stem of group.stems) {
+        const matches = group.filters.every((f) =>
+          stemMatchesClusterFilter(stem.properties, f)
+        );
+        allStems.push({
+          ...stem,
+          properties: {
+            ...stem.properties,
+            __group: group.name,
+            __groupColor: matches ? group.color : group.filterColor,
+          },
+        });
+      }
+    } else {
+      const groupStems = hasFilters
         ? group.stems.filter((stem) =>
             group.filters.every((f) =>
               stemMatchesClusterFilter(stem.properties, f)
             )
           )
         : group.stems;
-    for (const stem of groupStems) {
-      allStems.push({
-        ...stem,
-        properties: { ...stem.properties, __group: group.name },
-      });
+      for (const stem of groupStems) {
+        allStems.push({
+          ...stem,
+          properties: { ...stem.properties, __group: group.name, __groupColor: group.color },
+        });
+      }
     }
+
     for (const layer of group.layers) {
       if (!layerIds.has(layer.layer_id)) {
         allLayers.push(layer);
@@ -341,6 +367,8 @@ export function StemMapPage() {
               color: GROUP_COLORS[0],
               visible: true,
               filters: [],
+              filterMode: 'hide',
+              filterColor: '#9e9e9e',
               stems: legacyData.stems,
               layers: legacyData.layers,
               edges: legacyData.edges,
@@ -368,6 +396,8 @@ export function StemMapPage() {
   useEffect(() => {
     if (!groupsReady) return;
     saveGroupsToIDB(groups);
+    const mergedData = mergeGroupsData(groups);
+    localStorage.setItem(STEM_MAP_STORAGE_KEY, JSON.stringify(mergedData));
   }, [groups, groupsReady]);
 
   const handleImportCsvFiles = useCallback(
@@ -393,6 +423,8 @@ export function StemMapPage() {
               ],
             visible: true,
             filters: [],
+            filterMode: 'hide',
+            filterColor: '#9e9e9e',
             stems,
             layers,
             edges: [],
@@ -403,6 +435,7 @@ export function StemMapPage() {
       }
       if (newGroups.length) {
         setGroups((prev) => [...prev, ...newGroups]);
+        localStorage.removeItem('stem-map-csv-editor-data');
       }
       event.target.value = '';
     },
@@ -438,7 +471,9 @@ export function StemMapPage() {
       const keys = new Set<string>();
       for (const stem of group.stems) {
         if (stem.properties) {
-          for (const k of Object.keys(stem.properties)) keys.add(k);
+          for (const k of Object.keys(stem.properties)) {
+            if (!k.startsWith('__')) keys.add(k);
+          }
         }
       }
       result[group.id] = [...keys].sort();
@@ -460,6 +495,19 @@ export function StemMapPage() {
     }
     return counts;
   }, [groups]);
+
+  const getStemColor = useCallback((stem: Stem): [number, number, number, number] | undefined => {
+    const color = stem.properties?.__groupColor;
+    if (typeof color !== 'string') return undefined;
+    const match = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(color);
+    if (!match) return undefined;
+    return [
+      parseInt(match[1], 16),
+      parseInt(match[2], 16),
+      parseInt(match[3], 16),
+      220,
+    ];
+  }, []);
 
   const [queries, setQueries] = useState<ClusterQuery[]>([]);
   const [expandedQueryId, setExpandedQueryId] = useState<string | false>(false);
@@ -602,6 +650,7 @@ export function StemMapPage() {
         data={currentData}
         showLabels={false}
         initialViewState={INITIAL_VIEW_STATE}
+        getStemColor={getStemColor}
         mapStyle="https://api.maptiler.com/maps/outdoor-v2/style.json?key=EY1glioABfpXI9vfzMwl"
         overlayLayers={polygonOverlayLayers}
         panelContent={
@@ -961,6 +1010,77 @@ export function StemMapPage() {
                       >
                         + Фильтр
                       </Button>
+                      {group.filters.length > 0 && (
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          alignItems="center"
+                          sx={{ mt: 0.5 }}
+                        >
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontSize: 11,
+                              color: '#78909c',
+                              fontWeight: 500,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            Не совпавшие:
+                          </Typography>
+                          <FormControl size="small" sx={{ minWidth: 90 }}>
+                            <Select
+                              value={group.filterMode}
+                              onChange={(e) =>
+                                updateGroup(group.id, {
+                                  filterMode: e.target
+                                    .value as FilterMode,
+                                })
+                              }
+                              sx={{
+                                fontSize: 11,
+                                borderRadius: 1.5,
+                                '& .MuiSelect-select': {
+                                  py: '3px',
+                                  px: 0.8,
+                                },
+                              }}
+                            >
+                              <MenuItem
+                                value="hide"
+                                sx={{ fontSize: 11 }}
+                              >
+                                Скрыть
+                              </MenuItem>
+                              <MenuItem
+                                value="recolor"
+                                sx={{ fontSize: 11 }}
+                              >
+                                Перекрасить
+                              </MenuItem>
+                            </Select>
+                          </FormControl>
+                          {group.filterMode === 'recolor' && (
+                            <input
+                              type="color"
+                              value={group.filterColor}
+                              onChange={(e) =>
+                                updateGroup(group.id, {
+                                  filterColor: e.target.value,
+                                })
+                              }
+                              style={{
+                                width: 24,
+                                height: 18,
+                                padding: 0,
+                                border: '1px solid rgba(0,0,0,0.1)',
+                                borderRadius: 3,
+                                cursor: 'pointer',
+                              }}
+                            />
+                          )}
+                        </Stack>
+                      )}
                     </Stack>
                   </Box>
 

@@ -64,4 +64,5 @@ export interface StemMapProps {
   resolveLayerValue?: LayerValueResolver;
   overlayLayers?: LayersList;
   panelContent?: ReactNode;
+  getStemColor?: (stem: Stem) => [number, number, number, number] | undefined;
 }
