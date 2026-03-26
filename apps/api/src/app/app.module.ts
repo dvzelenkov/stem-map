@@ -8,12 +8,14 @@ import config from './configuration/config';
 import { WebsocketGateway } from './websocket.getaway';
 import { EarthquakeService } from './earthquake.service';
 import { GeospatialModule } from '../geospatial/geospatial.module';
+import { AftershockAnalysisModule } from '../aftershock-analysis/aftershock-analysis.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ load: [config] }),
     CoreModule,
     GeospatialModule,
+    AftershockAnalysisModule,
   ],
   controllers: [AppController],
   providers: [
