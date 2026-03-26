@@ -1,3 +1,14 @@
+if (process.env.NODE_ENV !== 'production') {
+  const origMeasure = performance.measure.bind(performance);
+  performance.measure = (...args: Parameters<typeof performance.measure>) => {
+    try {
+      return origMeasure(...args);
+    } catch {
+      return undefined as unknown as PerformanceMeasure;
+    }
+  };
+}
+
 import * as ReactDOM from 'react-dom/client';
 import {
   createBrowserRouter,

@@ -17,6 +17,7 @@ import {
   Button,
   Checkbox,
   Chip,
+  CircularProgress,
   Divider,
   FormControl,
   FormControlLabel,
@@ -33,10 +34,10 @@ import {
   Typography,
 } from '@mui/material';
 import axios from 'axios';
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { INITIAL_VIEW_STATE } from '../constants';
-import { getGeneratedLayers, mapStems, parseCsv } from './stem-map-csv';
+import { getGeneratedLayers, mapStems, parseCsv, clearEditorTablesFromIDB } from './stem-map-csv';
 
 const STEM_MAP_STORAGE_KEY = 'stem-map-uploaded-data';
 
@@ -220,6 +221,7 @@ interface StemGroup {
   stems: Stem[];
   layers: Layer[];
   edges: Edge[];
+  layerColors?: Record<string, string>;
 }
 
 let nextGroupId = 1;
@@ -296,6 +298,7 @@ const mergeGroupsData = (groups: StemGroup[]): StemMapInputData => {
   const allLayers: Layer[] = [];
   const allEdges: Edge[] = [];
   const layerIds = new Set<string>();
+  const mergedLayerColors: Record<string, string> = {};
 
   for (const group of visible) {
     const hasFilters = group.filters.length > 0;
@@ -337,19 +340,40 @@ const mergeGroupsData = (groups: StemGroup[]): StemMapInputData => {
       }
     }
     allEdges.push(...group.edges);
+
+    if (group.layerColors) {
+      Object.assign(mergedLayerColors, group.layerColors);
+    }
   }
+
+  const stemIdSet = new Set(allStems.map((s) => s.stem_id));
+  const validEdges = allEdges.filter(
+    (edge) => stemIdSet.has(edge.source_stem_id) && stemIdSet.has(edge.target_stem_id)
+  );
 
   return {
     layers: allLayers,
     stems: allStems,
-    edges: allEdges,
+    edges: validEdges,
     copies: 'implicit',
+    layerColors: Object.keys(mergedLayerColors).length > 0 ? mergedLayerColors : undefined,
   };
 };
 
 export function StemMapPage() {
-  const [groups, setGroups] = useState<StemGroup[]>([]);
+  const groupsRef = useRef<StemGroup[]>([]);
+  const [groupsVersion, setGroupsVersion] = useState(0);
   const [groupsReady, setGroupsReady] = useState(false);
+
+  const groups = groupsRef.current;
+
+  const setGroups = useCallback(
+    (updater: StemGroup[] | ((prev: StemGroup[]) => StemGroup[])) => {
+      groupsRef.current = typeof updater === 'function' ? updater(groupsRef.current) : updater;
+      setGroupsVersion((v) => v + 1);
+    },
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -383,63 +407,79 @@ export function StemMapPage() {
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [expandedGroupId, setExpandedGroupId] = useState<string | false>(
     false
   );
+  const importOverlayRef = useRef<HTMLDivElement>(null);
 
-  const currentData = useMemo(() => mergeGroupsData(groups), [groups]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const currentData = useMemo(() => mergeGroupsData(groups), [groupsVersion]);
 
-  const groupNames = useMemo(() => groups.map((g) => g.name), [groups]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const groupNames = useMemo(() => groups.map((g) => g.name), [groupsVersion]);
 
   useEffect(() => {
     if (!groupsReady) return;
-    saveGroupsToIDB(groups);
-    const mergedData = mergeGroupsData(groups);
-    localStorage.setItem(STEM_MAP_STORAGE_KEY, JSON.stringify(mergedData));
-  }, [groups, groupsReady]);
+    const timer = setTimeout(() => {
+      saveGroupsToIDB(groupsRef.current);
+    }, 1000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupsVersion, groupsReady]);
 
   const handleImportCsvFiles = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const files = event.target.files;
       if (!files || !files.length) return;
 
-      const newGroups: StemGroup[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        try {
-          const text = await file.text();
-          const csvData = parseCsv(text);
-          const name = file.name.replace(/\.csv$/i, '');
-          const layers = getGeneratedLayers(csvData.headers);
-          const stems = mapStems(csvData.rows, csvData.headers);
-          newGroups.push({
-            id: `g-${nextGroupId++}`,
-            name,
-            color:
-              GROUP_COLORS[
-                (groups.length + newGroups.length) % GROUP_COLORS.length
-              ],
-            visible: true,
-            filters: [],
-            filterMode: 'hide',
-            filterColor: '#9e9e9e',
-            stems,
-            layers,
-            edges: [],
-          });
-        } catch {
-          // skip malformed files
+      if (importOverlayRef.current) importOverlayRef.current.style.display = 'flex';
+      await new Promise<void>((resolve) => { setTimeout(resolve, 50); });
+
+      try {
+        const newGroups: StemGroup[] = [];
+        const currentLen = groupsRef.current.length;
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          try {
+            const text = await file.text();
+            const csvData = parseCsv(text);
+            const name = file.name.replace(/\.csv$/i, '');
+            const layers = getGeneratedLayers(csvData.headers);
+            const stems = mapStems(csvData.rows, csvData.headers);
+            newGroups.push({
+              id: `g-${nextGroupId++}`,
+              name,
+              color:
+                GROUP_COLORS[
+                  (currentLen + newGroups.length) % GROUP_COLORS.length
+                ],
+              visible: true,
+              filters: [],
+              filterMode: 'hide',
+              filterColor: '#9e9e9e',
+              stems,
+              layers,
+              edges: [],
+            });
+          } catch {
+            // skip malformed files
+          }
         }
-      }
-      if (newGroups.length) {
-        setGroups((prev) => [...prev, ...newGroups]);
-        localStorage.removeItem('stem-map-csv-editor-data');
+        if (newGroups.length) {
+          setGroups((prev) => [...prev, ...newGroups]);
+          localStorage.removeItem('stem-map-csv-editor-data');
+          clearEditorTablesFromIDB();
+        }
+      } finally {
+        if (importOverlayRef.current) importOverlayRef.current.style.display = 'none';
       }
       event.target.value = '';
     },
-    [groups.length]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
   );
 
   const toggleGroupVisibility = useCallback((groupId: string) => {
@@ -479,7 +519,8 @@ export function StemMapPage() {
       result[group.id] = [...keys].sort();
     }
     return result;
-  }, [groups]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupsVersion]);
 
   const groupFilteredCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -494,7 +535,8 @@ export function StemMapPage() {
             ).length;
     }
     return counts;
-  }, [groups]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupsVersion]);
 
   const getStemColor = useCallback((stem: Stem): [number, number, number, number] | undefined => {
     const color = stem.properties?.__groupColor;
@@ -646,6 +688,24 @@ export function StemMapPage() {
 
   return (
     <div style={{ height: '100vh', width: '100vw', position: 'relative' }}>
+      <div
+        ref={importOverlayRef}
+        style={{
+          display: 'none',
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 9999,
+          background: 'rgba(0,0,0,0.5)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column',
+          gap: 16,
+          color: '#fff',
+        }}
+      >
+        <CircularProgress color="inherit" />
+        <Typography variant="body2">Импорт файлов…</Typography>
+      </div>
       <StemMap
         data={currentData}
         showLabels={false}
@@ -1635,8 +1695,9 @@ function ClusterQueryAccordion({
                                 ),
                               })
                             }
+                            inputProps={{ step: 0.1, min: 0.05 }}
                             sx={{
-                              width: 52,
+                              width: 64,
                               ...fieldSx,
                               '& .MuiInputBase-input': { fontSize: 11, py: '4px', px: 0.6 },
                               '& .MuiInputLabel-root': { fontSize: 10 },

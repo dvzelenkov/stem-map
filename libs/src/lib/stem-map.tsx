@@ -61,10 +61,8 @@ const EDGE_DIMMED_COLOR: [number, number, number, number] = [130, 130, 130, 90];
 const MIN_COLUMN_RADIUS = 900;
 const MAX_COLUMN_RADIUS = 9310;
 const ALL_LAYERS_FILTER_ID = '__all_layers__';
-const EDGE_LAYER_BASE_ALTITUDE = 2500;
-const EDGE_LAYER_ALTITUDE_STEP = 15000;
-const EDGE_IN_LAYER_ALTITUDE_STEP = 220;
 const COLUMN_ELEVATION_UNIT = 3500;
+const COLUMN_ELEVATION_SCALE = 1.4;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -79,20 +77,19 @@ const getRadiusByZoom = (zoom: number): number => {
 const getHeightScaleByRadius = (radius: number): number =>
   radius / MIN_COLUMN_RADIUS;
 
-const getEdgeAltitudeScaleByZoom = (zoom: number): number => {
-  const normalizedZoom = clamp((zoom - 3) / 7, 0, 1);
-  return 4.4 - normalizedZoom * 4.1;
-};
-
 const getEdgeLayerAltitude = (
   layerOrderIndex: number,
   edgeOrderIndexInLayer: number,
-  edgeAltitudeScale: number
+  totalEdgesInLayer: number,
+  heightScale: number
 ): number => {
-  const baseAltitude =
-    EDGE_LAYER_BASE_ALTITUDE + layerOrderIndex * EDGE_LAYER_ALTITUDE_STEP;
-  const edgeOffsetInsideLayer = edgeOrderIndexInLayer * EDGE_IN_LAYER_ALTITUDE_STEP;
-  return (baseAltitude + edgeOffsetInsideLayer) * edgeAltitudeScale;
+  const segmentCenter = (layerOrderIndex + 0.5) * COLUMN_ELEVATION_UNIT;
+  const maxSpread = COLUMN_ELEVATION_UNIT * 0.6;
+  const edgeSpread =
+    totalEdgesInLayer > 1
+      ? ((edgeOrderIndexInLayer / (totalEdgesInLayer - 1)) - 0.5) * maxSpread
+      : 0;
+  return (segmentCenter + edgeSpread) * heightScale * COLUMN_ELEVATION_SCALE;
 };
 
 const normalizeHexColor = (value: string | undefined): string | null => {
@@ -317,16 +314,6 @@ export function StemMap({
     return orderByLayerId;
   }, [layerEdgeCountById, orderedLayers]);
 
-  const maxConnectedLayersCount = useMemo(() => {
-    let maxCount = 1;
-    for (const count of connectedLayersCountByStem.values()) {
-      if (count > maxCount) {
-        maxCount = count;
-      }
-    }
-    return maxCount;
-  }, [connectedLayersCountByStem]);
-
   const stemsWithCopies = useMemo<StemWithCopy[]>(() => {
     const copyLayerId =
       activeLayerId === ALL_LAYERS_FILTER_ID
@@ -350,7 +337,6 @@ export function StemMap({
   const baseRadiusByZoom = getRadiusByZoom(currentZoom);
   const currentRadius = Math.round(baseRadiusByZoom * clamp(columnRadiusScale, 0.1, 1));
   const heightScaleByZoom = getHeightScaleByRadius(baseRadiusByZoom);
-  const edgeAltitudeScaleByZoom = getEdgeAltitudeScaleByZoom(currentZoom);
 
   const visibleEdges = useMemo<VisibleEdge[]>(() => {
     const edgeIndexByLayerId = new globalThis.Map<string, number>();
@@ -383,7 +369,8 @@ export function StemMap({
           layerAltitude: getEdgeLayerAltitude(
             layerAltitudeOrderById.get(edge.layer_id) ?? 0,
             edgeOrderIndexInLayer,
-            edgeAltitudeScaleByZoom
+            layerEdgeCountById.get(edge.layer_id) ?? 1,
+            heightScaleByZoom
           ),
         };
       })
@@ -391,8 +378,9 @@ export function StemMap({
   }, [
     activeLayerId,
     data.edges,
-    edgeAltitudeScaleByZoom,
+    heightScaleByZoom,
     layerAltitudeOrderById,
+    layerEdgeCountById,
     orderedLayers,
     stemById,
   ]);
@@ -431,7 +419,7 @@ export function StemMap({
       },
       widthUnits: 'pixels',
       getWidth: (item) => {
-        const baseWidth = Math.max(1, (item.weight ?? 1) * 1.1);
+        const baseWidth = 1 + clamp((currentZoom - 3) / 7, 0, 1) * 2.5;
         if (!selectedStemId) {
           return baseWidth;
         }
@@ -443,14 +431,14 @@ export function StemMap({
       updateTriggers: {
         getSourceColor: [selectedStemId, data.layerColors],
         getTargetColor: [selectedStemId, data.layerColors],
-        getWidth: selectedStemId,
+        getWidth: [selectedStemId, currentZoom],
       },
     }),
     new StemColumn<StemWithCopy>({
       id: `stems-${activeLayerId}`,
       data: stemsWithCopies,
       radius: currentRadius,
-      elevationScale: 1.4,
+      elevationScale: COLUMN_ELEVATION_SCALE,
       getFillColor: (item) => {
         if (item.stem_id === selectedStemId) return SELECTED_COLOR;
         return getStemColor?.(item) ?? NODE_COLOR;
@@ -458,10 +446,10 @@ export function StemMap({
       getLineColor: [255, 255, 255, 240],
       lineWidthMinPixels: 1,
       getElevation: () =>
-        maxConnectedLayersCount * COLUMN_ELEVATION_UNIT * heightScaleByZoom,
+        orderedLayers.length * COLUMN_ELEVATION_UNIT * heightScaleByZoom,
       updateTriggers: {
         getFillColor: [activeLayerId, selectedStemId, getStemColor],
-        getElevation: [heightScaleByZoom, maxConnectedLayersCount],
+        getElevation: [heightScaleByZoom, orderedLayers.length],
         radius: [currentRadius, columnRadiusScale],
       },
     }),
