@@ -8,6 +8,10 @@ tmp
 # dependencies
 node_modules
 
+# lockfiles from other package managers (project uses pnpm)
+package-lock.json
+yarn.lock
+
 # IDEs and editors
 /.idea
 .project
