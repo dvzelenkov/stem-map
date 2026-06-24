@@ -15,19 +15,13 @@ import {
   RouterProvider,
 } from 'react-router-dom';
 
-import App from './app/pages';
-import EarthquakesOnline from './app/pages/earthquakes-online';
 import StemMapPage from './app/pages/stem-map';
 import StemMapCsvPage from './app/pages/stem-map-csv';
 
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <App />,
-  },
-  {
-    path: 'earthquakes-online',
-    element: <EarthquakesOnline />,
+    element: <StemMapPage />,
   },
   {
     path: 'trunk-map',

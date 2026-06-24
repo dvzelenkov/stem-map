@@ -13,7 +13,8 @@
         ]
       }
     }
-  },
+  }, 
+  "packageManager" :  "pnpm",
   "targetDefaults": {
     "build": {
       "dependsOn": [
