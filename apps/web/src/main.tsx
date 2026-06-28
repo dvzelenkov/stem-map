@@ -1,3 +1,12 @@
+import * as ReactDOM from 'react-dom/client';
+import {
+  createBrowserRouter,
+  RouterProvider,
+} from 'react-router-dom';
+
+import StemMapPage from './app/pages/stem-map';
+import StemMapCsvPage from './app/pages/stem-map-csv';
+
 if (process.env.NODE_ENV !== 'production') {
   const origMeasure = performance.measure.bind(performance);
   performance.measure = (...args: Parameters<typeof performance.measure>) => {
@@ -8,15 +17,6 @@ if (process.env.NODE_ENV !== 'production') {
     }
   };
 }
-
-import * as ReactDOM from 'react-dom/client';
-import {
-  createBrowserRouter,
-  RouterProvider,
-} from 'react-router-dom';
-
-import StemMapPage from './app/pages/stem-map';
-import StemMapCsvPage from './app/pages/stem-map-csv';
 
 const router = createBrowserRouter([
   {
